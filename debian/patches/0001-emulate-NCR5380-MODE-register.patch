@@ -1,0 +1,47 @@
+Description: Emulate NCR5380 MODE register
+ Fixes a kernel soft-lockup with newer Linux kernels
+ running inside Aranym when initializing SCSI drivers.
+Author: Andreas Schwab <schwab@linux-m68k.org>
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=865928
+Origin: upstream, https://github.com/aranym/aranym/commit/7af1cbfc5257d2c524ffe009790045d687c69fa5
+Bug: <url in upstream bugtracker>
+Forwarded: not-needed
+Last-Update: 2017-09-03
+
+--- aranym-1.0.2.orig/src/include/ncr5380.h
++++ aranym-1.0.2/src/include/ncr5380.h
+@@ -33,6 +33,7 @@ class NCR5380 {
+ 		uae_u8	hd_count;
+ 
+ 		uae_u8	hd_initiator;
++		uae_u8	hd_mode;
+ 
+ 	public:
+ 		NCR5380(void);
+--- aranym-1.0.2.orig/src/ncr5380.cpp
++++ aranym-1.0.2/src/ncr5380.cpp
+@@ -120,7 +120,7 @@ NCR5380::~NCR5380(void)
+ 
+ void NCR5380::reset(void)
+ {
+-	hd_count = hd_status = hd_initiator = 0;
++	hd_count = hd_status = hd_initiator = hd_mode = 0;
+ 
+ 	D(bug("ncr5380: reset"));
+ }
+@@ -140,6 +140,7 @@ uae_u8 NCR5380::ReadData(uae_u16 control
+ 			data = hd_initiator = ICR_ARBITRATION_PROGRESS;
+ 			break;
+ 		case MODE_REG:
++			data = hd_mode;
+ 			break;
+ 		case TARGET_COMMAND_REG:
+ 			break;
+@@ -172,6 +173,7 @@ void NCR5380::WriteData(uae_u16 control,
+ 			hd_initiator = data;
+ 			break;
+ 		case MODE_REG:
++			hd_mode = data;
+ 			break;
+ 		case TARGET_COMMAND_REG:
+ 			break;

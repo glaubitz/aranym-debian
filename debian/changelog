@@ -1,3 +1,11 @@
+aranym (1.0.2-2.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Add patch to fix kernel soft-lock up during SCSI driver
+    initialization when running Linux (Closes: #865928)
+
+ -- John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>  Sun, 03 Sep 2017 15:53:18 +0200
+
 aranym (1.0.2-2) unstable; urgency=medium
 
   * [1ac234e] Update autoconf configs (Closes: #727321)

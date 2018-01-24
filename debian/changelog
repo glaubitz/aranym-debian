@@ -1,3 +1,11 @@
+aranym (1.0.2-2.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Fix build failure with glibc-2.26 on ARM32.
+  * Bump standards and debhelper versions.
+
+ -- Matthias Klose <doko@debian.org>  Wed, 24 Jan 2018 23:39:45 +0100
+
 aranym (1.0.2-2.1) unstable; urgency=medium
 
   * Non-maintainer upload.

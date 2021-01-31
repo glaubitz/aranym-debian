@@ -21,7 +21,7 @@
 #include "sysdeps.h"
 #include "hardware.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "midi.h"
 #include "parameters.h"
 
@@ -49,4 +49,24 @@ void MIDI::reset(void)
 	D(bug("midi: reset"));
 
 	ACIA::reset();
+}
+
+
+void MIDI::close(void)
+{
+	if (fd >= 0)
+	{
+		int i, j;
+
+		for (j=0;j<128;j++) {
+			for (i=0;i<16;i++) {
+				WriteData(0x80 + i);
+				WriteData(j);
+				WriteData(0);
+			}
+		}
+	
+		::close(fd);
+		fd = -1;
+	}
 }

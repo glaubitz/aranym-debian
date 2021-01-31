@@ -5,11 +5,13 @@
 
 /******************************************************************************/
 
-#ifdef OS_cygwin
+#if defined(OS_cygwin) || defined(OS_mingw)
 
-#define WIN32_LEAN_AND_MEAN /* avoid including junk */
+#undef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1 /* avoid including junk */
 #include <windows.h>
 #include <winerror.h>
+#undef WIN32_LEAN_AND_MEAN /* to avoid redefinition in SDL headers */
 
 #ifdef CPU_i386
 #define CONTEXT_NAME    ContextRecord
@@ -74,13 +76,43 @@ main_exception_filter (EXCEPTION_POINTERS *ExceptionInfo)
   {
   	CONTEXT_ATYPE CONTEXT_NAME = ExceptionInfo->ContextRecord;
   	char *fault_addr = (char *)ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
-	D(bug("\nsegfault: pc=%08x, eip=%08lx, addr=%p (0x%08x)", m68k_getpc(), CONTEXT_REGS[REG_RIP], fault_addr, (memptr)(uintptr)(fault_addr - FMEMORY)));
-    handle_access_fault(CONTEXT_NAME, (memptr)(uintptr)(fault_addr - FMEMORY));
+	memptr addr = (memptr)(uintptr)(fault_addr - fixed_memory_offset);
+#if DEBUG
+	if (addr >= 0xff000000)
+		addr &= 0x00ffffff;
+	if (addr < 0x00f00000 || addr > 0x00ffffff) // YYY
+		bug("\nsegfault: pc=%08x, " REG_RIP_NAME " =%p, addr=%p (0x%08x)", m68k_getpc(), (void *)CONTEXT_AEIP, fault_addr, addr);
+	if (fault_addr < (char *)(fixed_memory_offset - 0x1000000UL)
+#ifdef CPU_x86_64
+		|| fault_addr >= ((char *)fixed_memory_offset + 0x100000000UL)
+#endif
+		)
+	{
+#ifdef HAVE_DISASM_X86
+		if (CONTEXT_AEIP != 0)
+		{
+			char buf[256];
+			
+			x86_disasm((const uint8 *)CONTEXT_AEIP, buf, 1);
+			panicbug("%s", buf);
+		}
+#endif
+		// raise(SIGBUS);
+	}
+#endif
+	if (fault_addr == 0 || CONTEXT_AEIP == 0)
+	{
+		real_segmentationfault();
+		/* not reached (hopefully) */
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+    handle_access_fault(CONTEXT_NAME, addr);
     return EXCEPTION_CONTINUE_EXECUTION;
   }
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
+#ifdef OS_cygwin
 /* In Cygwin programs, SetUnhandledExceptionFilter has no effect because Cygwin
    installs a global exception handler.  We have to dig deep in order to install
    our main_exception_filter.  */
@@ -137,6 +169,15 @@ do_install_main_exception_filter ()
   cygwin_exception_handler = _except_list->handler;
   _except_list->handler = aranym_exception_handler;
 }
+#endif /* OS_cygwin */
+
+#ifdef OS_mingw
+static void
+do_install_main_exception_filter ()
+{
+	SetUnhandledExceptionFilter(main_exception_filter);
+}
+#endif
 
 static void
 install_main_exception_filter ()
@@ -153,7 +194,12 @@ static void uninstall_main_exception_filter ()
 {
 	if (main_exception_filter_installed)
 	{
+#ifdef OS_cygwin
 		_except_list->handler = cygwin_exception_handler;
+#endif
+#ifdef OS_mingw
+		SetUnhandledExceptionFilter(NULL);
+#endif
 		main_exception_filter_installed = 0;
 	}
 }
@@ -163,7 +209,7 @@ void uninstall_sigsegv ()
 	uninstall_main_exception_filter();
 }
 
-void cygwin_abort()
+void cygwin_mingw_abort()
 {
 	uninstall_sigsegv();
 #undef abort

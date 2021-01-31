@@ -21,7 +21,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include "sysdeps.h"
 #include <cstring>
+#include <stdlib.h>
 
 #include "tools.h"
 
@@ -41,4 +43,66 @@ char *safe_strncpy(char *dest, const char *src, size_t size)
 		dest[size-1] = '\0';
 	}
 	return dest;
+}
+
+char *safe_strncat(char *dest, const char *src, size_t size)
+{
+	if (dest == NULL) return NULL;
+	if (size > 0) {
+		if (src && (strlen(src) + strlen(dest)) < size)
+			strcpy(dest + strlen(dest), src);
+	}
+	return dest;
+}
+
+char *my_canonicalize_file_name(const char *filename, bool append_slash)
+{
+	if (filename == NULL)
+		return NULL;
+
+#if (!defined HAVE_CANONICALIZE_FILE_NAME && defined HAVE_REALPATH) || defined __CYGWIN__
+#ifdef PATH_MAX
+	int path_max = PATH_MAX;
+#else
+	int path_max = pathconf(filename, _PC_PATH_MAX);
+	if (path_max <= 0)
+		path_max = 4096;
+#endif
+#endif
+
+	char *resolved;
+#if defined HAVE_CANONICALIZE_FILE_NAME
+	resolved = canonicalize_file_name(filename);
+#elif defined HAVE_REALPATH
+	char *tmp = (char *)malloc(path_max);
+	char *realp = realpath(filename, tmp);
+	resolved = (realp != NULL) ? strdup(realp) : NULL;
+	free(tmp);
+#else
+	resolved = NULL;
+#endif
+	if (resolved == NULL)
+		resolved = strdup(filename);
+	if (resolved)
+	{
+#ifdef __CYGWIN__
+		char *tmp2 = (char *)malloc(path_max);
+		strcpy(tmp2, resolved);
+		cygwin_path_to_win32(tmp2, path_max);
+		free(resolved);
+		resolved = tmp2;
+#endif
+		strd2upath(resolved, resolved);
+		if (append_slash)
+		{
+			size_t len = strlen(resolved);
+			if (len > 1 && resolved[len - 1] != *DIRSEPARATOR)
+			{
+				resolved = (char *)realloc(resolved, len + sizeof(DIRSEPARATOR));
+				if (resolved)
+					strcat(resolved, DIRSEPARATOR);
+			}
+		}
+	}
+	return resolved;
 }

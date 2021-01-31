@@ -48,7 +48,7 @@ typedef enum {
 // the following entries are from EmuTOS and TOS.HYP (http://toshyp.atari.org/en/003007.html#Cookie_2C_20_AKP)
 	COUNTRY_PL,	// Poland
 	COUNTRY_LT,	// Lithuania
-	COUNTRY_RU, // Russia	
+	COUNTRY_RU, // Russia
 	COUNTRY_EE, // Estonia
 	COUNTRY_BY, // Belarus
 	COUNTRY_UA, // Ukraine
@@ -78,13 +78,15 @@ typedef enum {
 	COUNTRY_KH, // Cambodia
 	COUNTRY_ID, // Indonesia
 	COUNTRY_BD, // Bangladesh
+	COUNTRY_MX = 99, // Mexico (found in Atari sources)
 } nvram_t;
 
 class RTC : public BASE_IO {
 private:
 	uint8 index;
 	char nvram_filename[512];
-
+	struct tm frozen_time;
+	
 public:
 	RTC(memptr, uint32);
 	virtual ~RTC();
@@ -103,6 +105,8 @@ private:
 	void setData(uint8);
 	void setChecksum();
 	void patch();
+	void freezeTime(void);
+	struct tm getFrozenTime(void);
 };
 
 #endif // _RTC_H

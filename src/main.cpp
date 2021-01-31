@@ -65,8 +65,6 @@ void setactvdebug()
 void setactvdebug(int)
 #endif
 {
-	grabMouse(SDL_FALSE);
-
 #ifdef DEBUGGER
 	activate_debugger();
 #endif
@@ -85,7 +83,7 @@ static SDL_Thread *RTCthread = NULL;
 static volatile bool using_rtc_timer = false;
 static volatile bool quit_rtc_loop = false;
 #endif
-SDL_TimerID my_timer_id = SDL_static_cast(SDL_TimerID, 0);
+SDL_TimerID my_timer_id = (SDL_TimerID)0;
 
 #if DEBUG
 static int early_interrupts = 0;
@@ -99,6 +97,8 @@ static int total_interrupts = 0;
 
 #ifdef SDL_GUI
 bool isGuiAvailable;
+bool startupGUI = false;
+char *startupAlert = NULL;
 #endif
 
 uint32 InterruptFlags = 0;
@@ -323,8 +323,8 @@ bool InitOS(void)
 		panicbug("%s", e.getErrorMessage());
 	}
 
-	panicbug("No operating system found. ARAnyM can not boot!");
-	panicbug("Visit http://emutos.sourceforge.net/ and get your copy of EmuTOS now.");
+	guialert("No operating system found. ARAnyM can not boot!\n"
+			 "Visit http://emutos.sourceforge.net/ and get your copy of EmuTOS now.");
 	return false;
 }
 
@@ -334,6 +334,8 @@ bool InitOS(void)
 
 bool InitAll(void)
 {
+	bool needToReboot = false;
+
 #ifndef NOT_MALLOC
 	if (ROMBaseHost == NULL) {
 		if ((RAMBaseHost = (uint8 *)malloc(RAMSize + ROMSize + HWSize + FastRAMSize)) == NULL) {
@@ -381,7 +383,7 @@ bool InitAll(void)
 	CPUType = 4;
 	FPUType = 1;
 
-#ifdef HAVE_DISASM
+#ifdef HAVE_DISASM_M68K
 	D(bug("Initializing disassembler..."));
 	m68k_disasm_init(&disasm_info, CPU_68040);
 #endif
@@ -398,23 +400,8 @@ bool InitAll(void)
 	if (!Init680x0())
 		return false;
 
-#ifdef SDL_GUI
-	isGuiAvailable = SDLGui_Init();
-
-	if (isGuiAvailable && startupGUI) {
-		open_GUI();
-		do {
-			if (SDL_QuitRequested())
-				return false;
-			check_event();	// process mouse & keyboard events
-			host->video->refresh();
-			SDL_Delay(20);
-		} while(!SDLGui_isClosed());
-	}
-#endif /* SDL_GUI */
-
 #ifdef DEBUGGER
-	if (bx_options.startup.debugger) {
+	if (bx_options.startup.debugger && !startupGUI) {
 		D(bug("Activate debugger..."));
 		activate_debugger();
 	}
@@ -442,6 +429,39 @@ bool InitAll(void)
 	}
 
 	if (! InitOS())
+	{
+		startupGUI = true;
+		needToReboot = true;
+	}
+	
+#ifdef SDL_GUI
+	isGuiAvailable = SDLGui_Init();
+	
+	if (isGuiAvailable && startupGUI) {
+		do
+		{
+			open_GUI();
+			do {
+				if (SDL_QuitRequested())
+					return false;
+				check_event();	// process mouse & keyboard events
+				host->video->refresh();
+				SDL_Delay(20);
+			} while(!SDLGui_isClosed());
+			if (needToReboot)
+			{
+				needToReboot = false;
+				if (!quit_program && !InitOS())
+				{
+					needToReboot = true;
+				}
+			}
+		} while(needToReboot);
+	}
+	startupGUI = false;
+#endif /* SDL_GUI */
+	
+	if (bootOs == NULL || RAMBaseHost == NULL)
 		return false;
 
 	host->video->bootDone();
@@ -458,7 +478,8 @@ void ExitAll(void)
 	delete bootOs;
 
 	/* Pause audio before killing hw then host */
-	SDL_PauseAudio(SDL_TRUE);
+	if (SDL_WasInit(SDL_INIT_AUDIO))
+		SDL_PauseAudio(SDL_TRUE);
 
 	InputExit();
 
@@ -466,7 +487,7 @@ void ExitAll(void)
 	KillRTCTimer();
 	if (my_timer_id) {
 		SDL_RemoveTimer(my_timer_id);
-		my_timer_id = SDL_static_cast(SDL_TimerID, 0);
+		my_timer_id = (SDL_TimerID)0;
 		SDL_Delay(100);	// give it a time to safely finish the timer thread
 	}
 
@@ -477,7 +498,7 @@ void ExitAll(void)
 	SDLGui_UnInit();
 #endif
 
-#ifdef HAVE_DISASM
+#ifdef HAVE_DISASM_M68K
 	m68k_disasm_exit(&disasm_info);
 #endif
 
@@ -493,7 +514,7 @@ void ExitAll(void)
 	SDL_Quit();
 }
 
-void RestartAll()
+void RestartAll(bool cold)
 {
 	lastTicks = 0;
 
@@ -512,7 +533,7 @@ void RestartAll()
 
 	// OS init
 	try {
-		bootOs->reset();
+		bootOs->reset(cold);
 	} catch (AranymException &e) {
 		panicbug("%s", e.getErrorMessage());
 	}

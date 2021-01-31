@@ -29,13 +29,20 @@
 #include "host_surface.h"
 #include "hostscreen.h"
 #include "host.h"
+#include "main.h"
+#include "maptab.h"
+#ifdef OS_darwin
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 #include <cstdlib>
 #include <stack>
 
 #include "font.h"
+#include "fontsmall.h"
 #include "dialog.h"
 #include "dlgMain.h"
+#include "dlgAlert.h"
 
 #define DEBUG 0
 #include "debug.h"
@@ -43,7 +50,10 @@
 #define sdlscrn		gui_surf
 
 static SDL_Surface *fontgfx=NULL;
-static int fontwidth, fontheight;   /* Height and width of the actual font */
+static SDL_Surface *fontgfxsmall=NULL;
+/* layout of the converted surface */
+#define FONTCOLS 128
+#define FONTROWS ((FONTCHARS + FONTCOLS - 1) / FONTCOLS)
 
 static std::stack<Dialog *> dlgStack;
 
@@ -69,6 +79,9 @@ enum {
 	whitec
 };
 
+/* the glyph to display for undefined characters */
+#define REPLACEMENT_GLYPH 0x6ff
+
 // Stores current dialog coordinates
 static SDL_Rect DialogRect = {0, 0, 0, 0};
 
@@ -87,46 +100,58 @@ enum
 };
 #endif
 
+/* Special characters: */
+/*
+ * These are used for radio & checkboxes.
+ * Each graphic is composed of two characters,
+ * which are encoded as 0x600-0x0607 so they
+ * don't conflict with any other character.
+ */
+static char const SGCHECKBOX_RADIO_NORMAL[4] = { '\330', '\200', '\330', '\201' };
+static char const SGCHECKBOX_RADIO_SELECTED[4] = { '\330', '\202', '\330', '\203' };
+static char const SGCHECKBOX_NORMAL[4] = { '\330', '\204', '\330', '\205' };
+static char const SGCHECKBOX_SELECTED[4] = { '\330', '\206', '\330', '\207' };
+
 /*-----------------------------------------------------------------------*/
 /*
   Load an 1 plane XBM into a 8 planes SDL_Surface.
 */
-static SDL_Surface *SDLGui_LoadXBM(Uint8 *srcbits)
+static SDL_Surface *SDLGui_LoadXBM(const Uint8 *srcbits, int width, int height, int form_width)
 {
-  SDL_Surface *bitmap;
-  Uint8 *dstbits;
-  int x, y;
-	int w = 128;
-	int h = 256;
+	SDL_Surface *bitmap;
+	Uint8 *dstbits;
+	int ascii;
 
-  /* Allocate the bitmap */
-  bitmap = SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 8, 0, 0, 0, 0);
-  if ( bitmap == NULL )
-  {
-    panicbug("Couldn't allocate bitmap: %s", SDL_GetError());
-    return(NULL);
-  }
+	/* Allocate the bitmap */
+	bitmap = SDL_CreateRGBSurface(SDL_SWSURFACE, FONTCOLS * width, FONTROWS * height, 8, 0, 0, 0, 0);
+	if ( bitmap == NULL )
+	{
+		panicbug("Couldn't allocate bitmap: %s", SDL_GetError());
+		return(NULL);
+	}
 
-  dstbits = (Uint8 *)bitmap->pixels;
-  int mask = 0x80;
-  int charheight = h/16;
+	dstbits = (Uint8 *)bitmap->pixels;
 
-  /* Copy the pixels */
-  for (y = 0 ; y < h ; y++)
-  {
-    for (x = 0 ; x < w ; x++)
-    {
-      int ascii = x/8 + (y / charheight) * charheight;
-      int charline = y % charheight;
-      dstbits[x] = (srcbits[ascii + 256*charline] & mask) ? 1 : 0;
-      mask >>= 1;
-      mask |= (mask << 8);
-      mask &= 0x1FF;
-    }
-    dstbits += bitmap->pitch;
-  }
+	/* Copy the pixels */
+	for (ascii = 0; ascii < FONTCHARS; ascii++)
+	{
+		int y0 = ascii / FONTCOLS;
+		int x0 = ascii % FONTCOLS;
+		int x, y;
+		
+		for (y = 0; y < height; y++)
+		{
+			for (x = 0; x < width; x++)
+			{
+				int off = ascii * width + x;
+				int bit = off & 7;
+				dstbits[(y0 * height + y) * bitmap->pitch + x0 * width + x] =
+					(srcbits[(off >> 3) + y * form_width] & (0x80 >> bit)) ? 1 : 0;
+			}
+		}
+	}
 
-  return(bitmap);
+	return bitmap;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -137,28 +162,29 @@ bool SDLGui_Init()
 {
 	// Load the font graphics
 	char font_filename[256];
-	unsigned char font_data[4096];
+	unsigned char font_data_buffer[FONTHEIGHT * FORM_WIDTH];
 	getConfFilename("font", font_filename, sizeof(font_filename));
 	FILE *f = fopen(font_filename, "rb");
-	bool font_loaded = false;
+	const unsigned char *font_data = NULL;
 	if (f != NULL) {
-		if (fread(font_data, 1, sizeof(font_data), f) == sizeof(font_data)) {
-			font_loaded = true;
+		if (fread(font_data_buffer, 1, sizeof(font_data_buffer), f) == sizeof(font_data_buffer)) {
+			font_data = font_data_buffer;
 		}
 		fclose(f);
 	}
 	// If font can't be loaded use the internal one
-	if (! font_loaded) {
-		memcpy(font_data, font_bits, sizeof(font_data));
+	if (font_data == NULL) {
+		font_data = font_bits;
 	}
 	
-	fontgfx = SDLGui_LoadXBM(font_data);
+	fontgfx = SDLGui_LoadXBM(font_data, FONTWIDTH, FONTHEIGHT, FORM_WIDTH);
 	if (fontgfx == NULL)
 	{
 		panicbug("Could not create font data");
 		panicbug("ARAnyM GUI will not be available");
 		return false;
 	}
+	fontgfxsmall = SDLGui_LoadXBM(fontsmall_bits, FONTSMALLWIDTH, FONTSMALLHEIGHT, FORMSMALL_WIDTH);
 
 	gui_hsurf = host->video->createSurface(76*8+16,25*16+16,8);
 	if (!gui_hsurf) {
@@ -176,10 +202,20 @@ bool SDLGui_Init()
 
 	/* Set font color 0 as transparent */
 	SDL_SetColorKey(fontgfx, SDL_SRCCOLORKEY, 0);
+	if (fontgfxsmall)
+		SDL_SetColorKey(fontgfxsmall, SDL_SRCCOLORKEY, 0);
 
-	/* Get the font width and height: */
-	fontwidth = fontgfx->w/16;
-	fontheight = fontgfx->h/16;
+#if 0 /* for testing */
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	SDL_SetPaletteColors(fontgfx->format->palette, &gui_palette[whitec], 0, 1);
+	SDL_SetPaletteColors(fontgfx->format->palette, &gui_palette[blackc], 1, 1);
+#else
+	SDL_SetColors(fontgfx, &gui_palette[whitec], 0, 1);
+	SDL_SetColors(fontgfx, &gui_palette[blackc], 1, 1);
+#endif
+
+	SDL_SaveBMP(fontgfx, "aranym-font.bmp");
+#endif
 
 	return true;
 }
@@ -202,6 +238,12 @@ int SDLGui_UnInit()
 		fontgfx = NULL;
 	}
 
+	if (fontgfxsmall)
+	{
+		SDL_FreeSurface(fontgfxsmall);
+		fontgfxsmall = NULL;
+	}
+
 	return 0;
 }
 
@@ -213,13 +255,20 @@ int SDLGui_UnInit()
 */
 static void SDLGui_ObjCoord(SGOBJ *dlg, int objnum, SDL_Rect *rect)
 {
-  rect->x = dlg[objnum].x * fontwidth;
-  rect->y = dlg[objnum].y * fontheight;
-  rect->w = dlg[objnum].w * fontwidth;
-  rect->h = dlg[objnum].h * fontheight;
-
-  rect->x += (sdlscrn->w - (dlg[0].w * fontwidth)) / 2;
-  rect->y += (sdlscrn->h - (dlg[0].h * fontheight)) / 2;
+  rect->x = dlg[objnum].x * FONTWIDTH;
+  rect->y = dlg[objnum].y * FONTHEIGHT;
+  if (dlg[objnum].flags & SG_SMALLTEXT)
+  {
+    rect->w = dlg[objnum].w * FONTSMALLWIDTH;
+    rect->h = dlg[objnum].h * FONTSMALLHEIGHT;
+    rect->y += 3;
+  } else
+  {
+    rect->w = dlg[objnum].w * FONTWIDTH;
+    rect->h = dlg[objnum].h * FONTHEIGHT;
+  }
+  rect->x += (sdlscrn->w - (dlg[0].w * FONTWIDTH)) / 2;
+  rect->y += (sdlscrn->h - (dlg[0].h * FONTHEIGHT)) / 2;
 }
 
 
@@ -338,6 +387,80 @@ void SDLGui_RefreshObj(SGOBJ *dlg, int objnum)
 }
 
 
+static unsigned short *host_to_atari(const char *src)
+{
+#ifdef OS_darwin
+	/* MacOSX uses decomposed strings, normalize them first */
+	CFMutableStringRef theString = CFStringCreateMutable(NULL, 0);
+	CFStringAppendCString(theString, src, kCFStringEncodingUTF8);
+	CFStringNormalize(theString, kCFStringNormalizationFormC);
+	UniChar ch;
+	CFIndex idx;
+	CFIndex len = CFStringGetLength(theString);
+	unsigned short *dst, *res;
+	size_t count = strlen(src);
+	
+	res = (unsigned short *)malloc((count + 1) * sizeof(*res));
+	dst = res;
+	idx = 0;
+	while (idx < len )
+	{
+		ch = CFStringGetCharacterAtIndex(theString, idx);
+		if (ch >= FONTCHARS || (ch >= 0x80 && ch < 0xa0))
+		{
+			ch = REPLACEMENT_GLYPH;
+		} else if (ch >= FONTCHARS)
+		{
+			ch = utf16_to_atari[ch];
+			if (ch >= FONTCHARS)
+				ch = REPLACEMENT_GLYPH;
+		}
+		*dst++ = ch;
+		idx++;
+	}
+	*dst = '\0';
+	CFRelease(theString);
+#else
+	unsigned short ch;
+	size_t bytes;
+	unsigned short *dst, *res;
+	size_t count = strlen(src);
+	
+	res = (unsigned short *)malloc((count + 1) * sizeof(*res));
+	dst = res;
+	
+	while (*src)
+	{
+		ch = (unsigned char) *src;
+		if (ch < 0x80)
+		{
+			bytes = 1;
+		} else if ((ch & 0xe0) == 0xc0)
+		{
+			ch = ((ch & 0x1f) << 6) | (src[1] & 0x3f);
+			bytes = 2;
+		} else
+		{
+			ch = ((((ch & 0x0f) << 6) | (src[1] & 0x3f)) << 6) | (src[2] & 0x3f);
+			bytes = 3;
+		}
+		if (ch >= FONTCHARS || (ch >= 0x80 && ch < 0xa0))
+		{
+			ch = REPLACEMENT_GLYPH;
+		} else if (ch >= 0x100)
+		{
+			ch = utf16_to_atari[ch];
+			if (ch >= FONTCHARS)
+				ch = REPLACEMENT_GLYPH;
+		}
+		*dst++ = ch;
+		src += bytes;
+	}
+	*dst = '\0';
+#endif
+	return res;
+}
+
 /*-----------------------------------------------------------------------*/
 /*
   Draw a text string.
@@ -345,32 +468,124 @@ void SDLGui_RefreshObj(SGOBJ *dlg, int objnum)
 void SDLGui_Text(int x, int y, const char *txt, int col)
 {
   int i;
-  char c;
+  unsigned short c;
   SDL_Rect sr, dr;
-
+  unsigned short *conv;
+  
 #if SDL_VERSION_ATLEAST(2, 0, 0)
   SDL_SetPaletteColors(fontgfx->format->palette, &gui_palette[col], 1, 1);
 #else
   SDL_SetColors(fontgfx, &gui_palette[col], 1, 1);
 #endif
 
-  for (i = 0 ; txt[i] != 0 ; i++)
+  conv = host_to_atari(txt);
+  for (i = 0; conv[i] != 0; i++)
   {
-    c = txt[i];
-    sr.x = fontwidth * (c % 16);
-    sr.y = fontheight * (c / 16);
-    sr.w = fontwidth;
-    sr.h = fontheight;
+    c = conv[i];
+    sr.x = FONTWIDTH * (c % FONTCOLS);
+    sr.y = FONTHEIGHT * (c / FONTCOLS);
+    sr.w = FONTWIDTH;
+    sr.h = FONTHEIGHT;
 
-    dr.x = x + (fontwidth * i);
+    dr.x = x + (FONTWIDTH * i);
     dr.y = y;
-    dr.w = fontwidth;
-    dr.h = fontheight;
+    dr.w = FONTWIDTH;
+    dr.h = FONTHEIGHT;
 
     SDL_BlitSurface(fontgfx, &sr, sdlscrn, &dr);
   }
+  free(conv);
 }
 
+/*-----------------------------------------------------------------------*/
+/*
+  Draw a text string, using the smaller font.
+*/
+void SDLGui_TextSmall(int x, int y, const char *txt, int col)
+{
+  int i;
+  unsigned short c;
+  SDL_Rect sr, dr;
+  unsigned short *conv;
+  
+  if (fontgfxsmall == NULL)
+  {
+    SDLGui_Text(x, y, txt, col);
+    return;
+  }
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+  SDL_SetPaletteColors(fontgfxsmall->format->palette, &gui_palette[col], 1, 1);
+#else
+  SDL_SetColors(fontgfxsmall, &gui_palette[col], 1, 1);
+#endif
+
+  conv = host_to_atari(txt);
+  for (i = 0; conv[i] != 0; i++)
+  {
+    c = conv[i];
+    sr.x = FONTSMALLWIDTH * (c % FONTCOLS);
+    sr.y = FONTSMALLHEIGHT * (c / FONTCOLS);
+    sr.w = FONTSMALLWIDTH;
+    sr.h = FONTSMALLHEIGHT;
+
+    dr.x = x + (FONTSMALLWIDTH * i);
+    dr.y = y;
+    dr.w = FONTSMALLWIDTH;
+    dr.h = FONTSMALLHEIGHT;
+
+    SDL_BlitSurface(fontgfxsmall, &sr, sdlscrn, &dr);
+  }
+  free(conv);
+}
+
+/*-----------------------------------------------------------------------*/
+/*
+ * return the number of characters that are displayed
+ */
+int SDLGui_TextLen(const char *txt)
+{
+  unsigned short *conv;
+  int i;
+
+  conv = host_to_atari(txt);
+  for (i = 0; conv[i] != 0; i++)
+    ;
+  free(conv);
+  return i;
+}
+
+/*-----------------------------------------------------------------------*/
+/*
+ * return the number of up to a given character index
+ */
+int SDLGui_ByteLen(const char *txt, int pos)
+{
+	size_t bytes;
+	const char *src = txt;
+	unsigned char ch;
+	
+	while (pos > 0 && *src)
+	{
+		ch = *src;
+		if (ch < 0x80)
+		{
+			bytes = 1;
+		} else if ((ch & 0xe0) == 0xc0 && src[1])
+		{
+			bytes = 2;
+		} else if (src[1] && src[2])
+		{
+			bytes = 3;
+		} else
+		{
+			bytes = 1;
+		}
+		src += bytes;
+		pos--;
+	}
+	
+	return (int)(src - txt);
+}
 
 /*-----------------------------------------------------------------------*/
 /*
@@ -400,6 +615,37 @@ void SDLGui_DrawText(SGOBJ *tdlg, int objnum)
   SDLGui_ObjCoord(tdlg, objnum, &coord);
   SDL_FillRect(sdlscrn, &coord, SDLGui_MapColor(backgroundc));
   SDLGui_Text(coord.x, coord.y, tdlg[objnum].txt, textc);
+}
+
+
+/*-----------------------------------------------------------------------*/
+/*
+  Draw a dialog text object.
+*/
+void SDLGui_DrawTextSmall(SGOBJ *tdlg, int objnum)
+{
+  SDL_Rect coord;
+  int textc, backgroundc;
+
+  if (tdlg[objnum].state & SG_SELECTED)
+  {
+    textc       = whitec;
+    backgroundc = darkgreyc;
+  }
+  else if (tdlg[objnum].state & SG_DISABLED)
+  {
+    textc       = darkgreyc;
+    backgroundc = greyc;
+  }
+  else
+  {
+    textc       = blackc;
+    backgroundc = greyc;
+  }
+  
+  SDLGui_ObjCoord(tdlg, objnum, &coord);
+  SDL_FillRect(sdlscrn, &coord, SDLGui_MapColor(backgroundc));
+  SDLGui_TextSmall(coord.x, coord.y, tdlg[objnum].txt, textc);
 }
 
 
@@ -448,7 +694,7 @@ void SDLGui_DrawCursor(SGOBJ *dlg, cursor_state *cursor)
       cursorc = greyc;
 
     SDLGui_ObjCoord(dlg, cursor->object, &coord);
-    coord.x += (cursor->position * fontwidth);
+    coord.x += (cursor->position * FONTWIDTH);
     coord.w = 1;
     SDL_FillRect(sdlscrn, &coord, SDLGui_MapColor(cursorc));
 
@@ -673,8 +919,8 @@ void SDLGui_DrawButton(SGOBJ *bdlg, int objnum)
 
   SDLGui_ObjCoord(bdlg, objnum, &coord);
 
-  x = coord.x + ((coord.w - (strlen(bdlg[objnum].txt) * fontwidth)) / 2);
-  y = coord.y + ((coord.h - fontheight) / 2);
+  x = coord.x + ((coord.w - (SDLGui_TextLen(bdlg[objnum].txt) * FONTWIDTH)) / 2);
+  y = coord.y + ((coord.h - FONTHEIGHT) / 2);
 
   if (bdlg[objnum].state & SG_SELECTED)
   {
@@ -694,13 +940,44 @@ void SDLGui_DrawButton(SGOBJ *bdlg, int objnum)
 
 /*-----------------------------------------------------------------------*/
 /*
+  Draw a normal button.
+*/
+void SDLGui_DrawButtonSmall(SGOBJ *bdlg, int objnum)
+{
+  SDL_Rect coord;
+  int x, y;
+  int textc;
+
+  SDLGui_ObjCoord(bdlg, objnum, &coord);
+
+  x = coord.x + ((coord.w - (SDLGui_TextLen(bdlg[objnum].txt) * FONTSMALLWIDTH)) / 2);
+  y = coord.y + ((coord.h - FONTSMALLHEIGHT) / 2);
+
+  if (bdlg[objnum].state & SG_SELECTED)
+  {
+    x += 1;
+    y += 1;
+  }
+
+  if (bdlg[objnum].state & SG_DISABLED)
+    textc = darkgreyc;
+  else
+    textc = blackc;
+
+  SDLGui_DrawBox(bdlg, objnum);
+  SDLGui_TextSmall(x, y, bdlg[objnum].txt, textc);
+}
+
+
+/*-----------------------------------------------------------------------*/
+/*
   Draw a dialog check box object state.
 */
 void SDLGui_DrawCheckBoxState(SGOBJ *cdlg, int objnum)
 {
   Uint32 grey = SDLGui_MapColor(greyc);
   SDL_Rect coord;
-  char str[3];
+  char str[5];
   int textc;
 
   SDLGui_ObjCoord(cdlg, objnum, &coord);
@@ -708,38 +985,45 @@ void SDLGui_DrawCheckBoxState(SGOBJ *cdlg, int objnum)
   if (cdlg[objnum].flags & SG_RADIO)
   {
     if (cdlg[objnum].state & SG_SELECTED) {
-      str[0]=SGCHECKBOX_RADIO_SELECTED;
-      str[1]=SGCHECKBOX_RADIO_SELECTEd;
+      str[0]=SGCHECKBOX_RADIO_SELECTED[0];
+      str[1]=SGCHECKBOX_RADIO_SELECTED[1];
+      str[2]=SGCHECKBOX_RADIO_SELECTED[2];
+      str[3]=SGCHECKBOX_RADIO_SELECTED[3];
     }
     else {
-      str[0]=SGCHECKBOX_RADIO_NORMAL;
-      str[1]=SGCHECKBOX_RADIO_NORMAl;
+      str[0]=SGCHECKBOX_RADIO_NORMAL[0];
+      str[1]=SGCHECKBOX_RADIO_NORMAL[1];
+      str[2]=SGCHECKBOX_RADIO_NORMAL[2];
+      str[3]=SGCHECKBOX_RADIO_NORMAL[3];
     }
   }
   else
   {
     if (cdlg[objnum].state & SG_SELECTED) {
-      str[0]=SGCHECKBOX_SELECTED;
-      str[1]=SGCHECKBOX_SELECTEd;
+      str[0]=SGCHECKBOX_SELECTED[0];
+      str[1]=SGCHECKBOX_SELECTED[1];
+      str[2]=SGCHECKBOX_SELECTED[2];
+      str[3]=SGCHECKBOX_SELECTED[3];
     }
     else {
-      str[0]=SGCHECKBOX_NORMAL;
-      str[1]=SGCHECKBOX_NORMAl;
+      str[0]=SGCHECKBOX_NORMAL[0];
+      str[1]=SGCHECKBOX_NORMAL[1];
+      str[2]=SGCHECKBOX_NORMAL[2];
+      str[3]=SGCHECKBOX_NORMAL[3];
     }
   }
+  str[4]='\0';
 
   if (cdlg[objnum].state & SG_DISABLED)
     textc = darkgreyc;
   else
     textc = blackc;
 
-  str[2]='\0';
-
-  coord.w = fontwidth*2;
-  coord.h = fontheight;
+  coord.w = FONTWIDTH*2;
+  coord.h = FONTHEIGHT;
 
   if (cdlg[objnum].flags & SG_BUTTON_RIGHT)
-    coord.x += ((strlen(cdlg[objnum].txt) + 1) * fontwidth);
+    coord.x += ((SDLGui_TextLen(cdlg[objnum].txt) + 1) * FONTWIDTH);
 
   SDL_FillRect(sdlscrn, &coord, grey);
   SDLGui_Text(coord.x, coord.y, str, textc);
@@ -758,7 +1042,7 @@ void SDLGui_DrawCheckBox(SGOBJ *cdlg, int objnum)
   SDLGui_ObjCoord(cdlg, objnum, &coord);
 
   if (!(cdlg[objnum].flags&SG_BUTTON_RIGHT))
-    coord.x += (fontwidth * 3); // 2 chars for the box plus 1 space
+    coord.x += (FONTWIDTH * 3); // 2 chars for the box plus 1 space
 
   if (cdlg[objnum].state & SG_DISABLED)
     textc = darkgreyc;
@@ -777,7 +1061,7 @@ void SDLGui_DrawCheckBox(SGOBJ *cdlg, int objnum)
 void SDLGui_DrawPopupButton(SGOBJ *pdlg, int objnum)
 {
   SDL_Rect coord;
-  const char *downstr = "\x02";
+  static char const downstr[2] = { SGARROWDOWN, 0 };
   int textc;
 
   if (pdlg[objnum].state & SG_DISABLED)
@@ -790,7 +1074,7 @@ void SDLGui_DrawPopupButton(SGOBJ *pdlg, int objnum)
   SDLGui_ObjCoord(pdlg, objnum, &coord);
 
   SDLGui_Text(coord.x, coord.y, pdlg[objnum].txt, textc);
-  SDLGui_Text(coord.x+coord.w-fontwidth, coord.y, downstr, textc);
+  SDLGui_Text(coord.x+coord.w-FONTWIDTH, coord.y, downstr, textc);
 }
 
 
@@ -806,15 +1090,22 @@ void SDLGui_DrawObject(SGOBJ *dlg, int objnum)
       SDLGui_DrawBox(dlg, objnum);
       break;
     case SGTEXT:
-      SDLGui_DrawText(dlg, objnum);
+      if (dlg[objnum].flags & SG_SMALLTEXT)
+        SDLGui_DrawTextSmall(dlg, objnum);
+      else
+        SDLGui_DrawText(dlg, objnum);
       break;
     case SGEDITFIELD:
       SDLGui_DrawEditField(dlg, objnum);
       break;
     case SGBUTTON:
-      SDLGui_DrawButton(dlg, objnum);
+      if (dlg[objnum].flags & SG_SMALLTEXT)
+        SDLGui_DrawButtonSmall(dlg, objnum);
+      else
+        SDLGui_DrawButton(dlg, objnum);
       break;
     case SGCHECKBOX:
+    case SGRADIOBUT:
       SDLGui_DrawCheckBox(dlg, objnum);
       break;
     case SGPOPUP:
@@ -1082,7 +1373,7 @@ void SDLGui_MoveCursor(SGOBJ *dlg, cursor_state *cursor, int mode)
     SDLGui_DrawCursor(dlg, cursor);
 
     cursor->object = new_object;
-    cursor->position = strlen(dlg[new_object].txt);
+    cursor->position = SDLGui_TextLen(dlg[new_object].txt);
   }
   else
   {
@@ -1097,7 +1388,7 @@ void SDLGui_MoveCursor(SGOBJ *dlg, cursor_state *cursor, int mode)
 
       case SG_NEXT_EDITFIELD:
       case SG_LAST_EDITFIELD:
-        cursor->position = strlen(dlg[new_object].txt);
+        cursor->position = SDLGui_TextLen(dlg[new_object].txt);
         break;
     }
   }
@@ -1129,8 +1420,8 @@ void SDLGui_ClickEditField(SGOBJ *dlg, cursor_state *cursor, int clicked_obj, in
   SDLGui_DrawCursor(dlg, cursor);
 
   SDLGui_ObjFullCoord(dlg, clicked_obj, &coord);
-  i = (x - coord.x + (fontwidth / 2)) / fontwidth;
-  j = strlen(dlg[clicked_obj].txt);
+  i = (x - coord.x + (FONTWIDTH / 2)) / FONTWIDTH;
+  j = SDLGui_TextLen(dlg[clicked_obj].txt);
 
   cursor->object = clicked_obj;
   cursor->position = MIN(i, j);
@@ -1282,6 +1573,8 @@ int SDLGui_DoEvent(const SDL_Event &event)
 				break;
 			case SDL_QUIT:
 				return Dialog::GUI_CLOSE;
+			case SDL_MOUSEMOTION:
+				return Dialog::GUI_CONTINUE;
 		}
 
 		while (num_dialogs-->0) {
@@ -1289,9 +1582,10 @@ int SDLGui_DoEvent(const SDL_Event &event)
 
 			if (retval != Dialog::GUI_CONTINUE) {
 				Dialog *prev_dlg = NULL;
+				Dialog *curr_dlg = dlgStack.top();
 				dlgStack.pop();
 				if (!dlgStack.empty()) {
-					prev_dlg = dlgStack.top();		
+					prev_dlg = dlgStack.top();
 
 					/* Process result of called dialog */
 					prev_dlg->processResult();
@@ -1301,10 +1595,11 @@ int SDLGui_DoEvent(const SDL_Event &event)
 				}
 
 				/* Close current dialog */
-				delete gui_dlg;
+				delete curr_dlg;
 
 				/* Set dialog to previous one */
-				gui_dlg = prev_dlg;
+				if (gui_dlg == curr_dlg)
+					gui_dlg = prev_dlg;
 				if (gui_dlg) {
 					gui_dlg->init();
 					++num_dialogs; /* Need to process result in the caller dialog */
@@ -1322,6 +1617,13 @@ void SDLGui_Open(Dialog *new_dlg)
 	if (new_dlg==NULL) {
 		/* Open main as default */
 		new_dlg = DlgMainOpen();
+		if (startupAlert)
+		{
+			dlgStack.push(new_dlg);
+			new_dlg = DlgAlertOpen(startupAlert, ALERT_OK);
+			free(startupAlert);
+			startupAlert = NULL;
+		}
 	}
 
 	dlgStack.push(new_dlg);

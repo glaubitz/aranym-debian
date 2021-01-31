@@ -95,7 +95,7 @@ static int openAuthorizationContext()
 		return authStatus;
 }
 
-static void closeAuthoizationContext()
+static void closeAuthorizationContext()
 {
 	if (authorizationRef) {
 		AuthorizationFree (authorizationRef, kAuthorizationFlagDefaults);// 17
@@ -140,26 +140,40 @@ static int executeScriptAsRoot(char *application, char *args[]) {
     return execStatus;
 }
 
+TunTapEthernetHandler::TunTapEthernetHandler(int eth_idx)
+	: Handler(eth_idx),
+	fd(-1)
+{
+}
+
+TunTapEthernetHandler::~TunTapEthernetHandler()
+{
+	close();
+}
+
 bool TunTapEthernetHandler::open() {
 	// int nonblock = 1;
+	char *type = bx_options.ethernet[ethX].type;
 	char *devName = bx_options.ethernet[ethX].tunnel;
 
-	if ( strcmp(bx_options.ethernet[ethX].type, "none") == 0 ) {
-		if (ethX == MAX_ETH - 1) closeAuthoizationContext();
+	close();
+
+	if ( strlen(type) == 0 || strcmp(bx_options.ethernet[ethX].type, "none") == 0 ) {
+		if (ethX == MAX_ETH - 1) closeAuthorizationContext();
 		return false;	
 	}
 
 	// if 'bridge' mode then we are done
-	if ( strcmp(bx_options.ethernet[ethX].type, "bridge") == 0 ) {
+	if ( strstr(bx_options.ethernet[ethX].type, "bridge") != NULL ) {
 		panicbug("TunTap(%d): Bridge mode currently not supported '%s'", ethX, devName);
-		if (ethX == MAX_ETH - 1) closeAuthoizationContext();
+		if (ethX == MAX_ETH - 1) closeAuthorizationContext();
 		return false;	
 	}
 	
 	// get the tunnel nif name if provided
 	if (strlen(devName) == 0) {
 		D(bug("TunTap(%d): tunnel name undefined", ethX));
-		if (ethX == MAX_ETH - 1) closeAuthoizationContext();
+		if (ethX == MAX_ETH - 1) closeAuthorizationContext();
 		return false;
 	}
 	
@@ -168,12 +182,12 @@ bool TunTapEthernetHandler::open() {
 	fd = tapOpen( devName );
 	if (fd < 0) {
 		panicbug("TunTap(%d): NO_NET_DRIVER_WARN '%s': %s", ethX, devName, strerror(errno));
-		if (ethX == MAX_ETH - 1) closeAuthoizationContext();
+		if (ethX == MAX_ETH - 1) closeAuthorizationContext();
 		return false;
 	}
 	int auth = openAuthorizationContext();
 	if (auth) {
-		::close(fd);
+		close();
 		panicbug("TunTap(%d): Authorization failed'%s'", ethX, devName);
 		return false;	
 	}
@@ -203,24 +217,26 @@ bool TunTapEthernetHandler::open() {
 	
 	// Close /dev/net/tun device if exec failed
 	if (failed) {
-		::close(fd);
-		if (ethX == MAX_ETH - 1) closeAuthoizationContext();
+		close();
+		if (ethX == MAX_ETH - 1) closeAuthorizationContext();
 		return false;
 	}
 
 	// Set nonblocking I/O
 	//ioctl(fd, FIONBIO, &nonblock);
 
-	if (ethX == MAX_ETH - 1) closeAuthoizationContext();
+	if (ethX == MAX_ETH - 1) closeAuthorizationContext();
 	return true;
 }
 
-bool TunTapEthernetHandler::close() {
-	// Close /dev/net/tun device
-	::close(fd);
+void TunTapEthernetHandler::close() {
 	D(bug("TunTap(%d): close", ethX));
-
-	return true;
+	// Close /dev/net/tun device
+	if (fd > 0)
+	{
+		::close(fd);
+		fd = -1;
+	}
 }
 
 int TunTapEthernetHandler::recv(uint8 *buf, int len) {
@@ -240,7 +256,7 @@ int TunTapEthernetHandler::send(const uint8 *buf, int len) {
  */
 int TunTapEthernetHandler::tapOpenOld(char *dev)
 {
-    char tapname[14];
+    char tapname[sizeof(bx_options.ethernet[0].tunnel) + 5];
     int i, fd;
 
     if( *dev ) {

@@ -24,9 +24,13 @@
 #include "sysdeps.h"
 #include "hardware.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "newcpu.h"
+#include "memory-uae.h"
 #include "aradata.h"
 #include "parameters.h"
+
+#define DEBUG 0
+#include "debug.h"
 
 ARADATA::ARADATA(memptr addr, uint32 size) : BASE_IO(addr, size)
 {
@@ -53,6 +57,12 @@ void ARADATA::reset()
 	mouse_x = -1;
 	mouse_y = -1;
 	abase = 0;
+}
+
+void ARADATA::setAbase(memptr new_abase)
+{
+	abase = new_abase;
+	D(bug("ARADATA:: abase=%08x", new_abase));
 }
 
 uint8 ARADATA::handleRead(memptr addr) {

@@ -42,10 +42,11 @@ class BPFEthernetHandler : public ETHERNETDriver::Handler {
 	void reset_read_pos();
 	
 public:
-	BPFEthernetHandler(int eth_idx) : Handler(eth_idx) { }
+	BPFEthernetHandler(int eth_idx);
+	virtual ~BPFEthernetHandler();
 
 	virtual bool open();
-	virtual bool close();
+	virtual void close();
 	virtual int recv(uint8 *buf, int len);
 	virtual int send(const uint8 *buf, int len);
 };

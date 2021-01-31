@@ -24,6 +24,7 @@
 #endif
 
 #include "newcpu.h"
+#include <errno.h>
 
 #include "SDL_compat.h"
 #include <vector>
@@ -36,6 +37,7 @@
 #include "version.h"
 #include "parameters.h"	/* bx_options */
 #include "main.h"	/* QuitEmulator */
+#include "input.h"
 
 #ifdef NFVDI_SUPPORT
 # include "nf_objs.h"
@@ -55,11 +57,24 @@ void HostScreen::SetWMIcon(void)
 #ifndef OS_darwin
 	char path[1024];
 	getDataFilename("wm_icon.bmp", path, sizeof(path));
-	SDL_Surface *icon = SDL_LoadBMP(path);
+	SDL_Surface *icon = mySDL_LoadBMP_RW(SDL_RWFromFile(path, "rb"), 1);
 	if (icon != NULL) {
+		SDL_SetColorKey(icon, SDL_SRCCOLORKEY|SDL_RLEACCEL, 0);
 #if SDL_VERSION_ATLEAST(2, 0, 0)
-	SDL_SetWindowIcon(window, icon);
+		SDL_Surface *display_icon = SDL_ConvertSurfaceFormat(icon, SDL_GetWindowPixelFormat(window), 0);
+		if (display_icon)
+		{
+			SDL_FreeSurface(icon);
+			icon = display_icon;
+		}
+		SDL_SetWindowIcon(window, icon);
 #else
+		SDL_Surface *display_icon = SDL_DisplayFormat(icon);
+		if (display_icon)
+		{
+			SDL_FreeSurface(icon);
+			icon = display_icon;
+		}
 		uint8 mask[] = {0x00, 0x3f, 0xfc, 0x00,
 						0x00, 0xff, 0xfe, 0x00,
 						0x01, 0xff, 0xff, 0x80,
@@ -146,7 +161,6 @@ void HostScreen::SetWMIcon(void)
 HostScreen::HostScreen(void)
   : DirtyRects(),
   	logo(NULL),
-  	logo_present(true),
   	clear_screen(true),
 	force_refresh(true),
 	do_screenshot(false),
@@ -158,9 +172,12 @@ HostScreen::HostScreen(void)
 	ignoreMouseMotionEvent(false),
 	atari_mouse_xpos(-1),
 	atari_mouse_ypos(-1),
+	recording(false),
 	screen(NULL),
 	new_width(0),
 	new_height(0),
+	PendingConfigureNotifyWidth(-1),
+	PendingConfigureNotifyHeight(-1),
 	snapCounter(0)
 {
 #if SDL_VERSION_ATLEAST(2, 0, 0)
@@ -184,6 +201,7 @@ HostScreen::~HostScreen(void)
 
 void HostScreen::reset(void)
 {
+	StopRecording();
 	lastVidelWidth = lastVidelHeight = lastVidelBpp = -1;
 	numScreen = SCREEN_BOOT;
 	setVidelRendering(true);
@@ -191,6 +209,9 @@ void HostScreen::reset(void)
 
 	setVideoMode(MIN_WIDTH,MIN_HEIGHT,8);
 
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	// If double mouse cursor appear in FB Mode do sthg. similar to below code
+#else
 	const SDL_VideoInfo *videoInfo = SDL_GetVideoInfo();
 	if (!videoInfo->wm_available) {
 		hideMouse(SDL_TRUE);
@@ -198,15 +219,16 @@ void HostScreen::reset(void)
 		grabbedMouse = SDL_TRUE;
 		canGrabMouseAgain = true;
 	}
+#endif
 
 	/* Set window caption */
 	std::string buf;
 #ifdef SDL_GUI
 	char key[HOTKEYS_STRING_SIZE];
 	keysymToString(key, &bx_options.hotkeys.setup);
-	buf = std::string(VERSION_STRING) + std::string("  (Press the [") + std::string(key) + std::string("] key for SETUP)");
+	buf = std::string(version_string) + std::string("  (Press the [") + std::string(key) + std::string("] key for SETUP)");
 #else
-	buf = std::string(VERSION_STRING);
+	buf = std::string(version_string);
 #endif /* SDL_GUI */
 	SetCaption(buf.c_str());
 }
@@ -241,12 +263,78 @@ void HostScreen::doScreenshot(void)
 	do_screenshot = true;
 }
 
-void HostScreen::makeSnapshot(void)
+static int get_screenshot_counter(void)
+{
+	char dummy[5];
+	int i, num;
+	DIR *workingdir;
+	struct dirent *file;
+	int nScreenShots = 0;
+	
+	workingdir = opendir(bx_options.snapshot_dir);
+	if (workingdir == NULL)
+	{
+		HostFilesys::makeDir(bx_options.snapshot_dir);
+		workingdir = opendir(bx_options.snapshot_dir);
+	}
+	if (workingdir != NULL)
+	{
+		file = readdir(workingdir);
+		while (file != NULL)
+		{
+			if (strncmp("snap", file->d_name, 4) == 0 )
+			{
+				/* copy next 4 numbers */
+				for (i = 0; i < 4; i++)
+				{
+					if (file->d_name[4+i] >= '0' && file->d_name[4+i] <= '9')
+						dummy[i] = file->d_name[4+i];
+					else
+						break;
+				}
+
+				dummy[i] = '\0'; /* null terminate */
+				num = atoi(dummy);
+				if (num >= nScreenShots)
+					nScreenShots = num + 1;
+			}
+			/* next file.. */
+			file = readdir(workingdir);
+		}
+
+		closedir(workingdir);
+	}		
+	
+	return nScreenShots;
+}
+
+
+void HostScreen::writeSnapshot(SDL_Surface *surf)
 {
 	char filename[15];
-	sprintf( filename, "snap%03d.bmp", snapCounter++ );
+	char path[PATH_MAX];
 
-	SDL_SaveBMP(screen, filename);
+	if (snapCounter == 0)
+		snapCounter = get_screenshot_counter();
+	sprintf(filename, "snap%03d.bmp", snapCounter++ );
+	safe_strncpy(path, bx_options.snapshot_dir, sizeof(path));
+	addFilename(path, filename, sizeof(path));
+	if (SDL_SaveBMP(surf, path) < 0)
+	{
+#ifdef __CYGWIN__
+		bug("%s: %s", SDL_GetError(), win32_errstring(GetLastError()));
+#else
+		bug("%s: %s", SDL_GetError(), strerror(errno));
+#endif
+	} else
+	{
+		bug("saved screenshot %s", path);
+	}
+}
+
+void HostScreen::makeSnapshot(void)
+{
+	writeSnapshot(screen);
 }
 
 void HostScreen::toggleFullScreen(void)
@@ -324,6 +412,9 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 		height != oldmode.h ||
 		mode.format != oldmode.format)
 	{
+#ifdef USE_FIXED_CONSOLE_FBVIDEOMODE
+// Raspberry doesn't allow switching video mode. Keep current mode
+#endif
 		if (renderer)
 		{
 			SDL_DestroyRenderer(renderer);
@@ -337,7 +428,7 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 		
 		if (window == NULL)
 		{
-			window = SDL_CreateWindow(VERSION_STRING, x, y, width, height, windowFlags);
+			window = SDL_CreateWindow(version_string, x, y, width, height, windowFlags);
 			if (window)
 			{
 				SDL_GetWindowDisplayMode(window, &oldmode);
@@ -370,11 +461,13 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 	screen = SDL_GetWindowSurface(window);
 	// texture = SDL_CreateTextureFromSurface(renderer, screen);
 	
-	SetWMIcon();
-
 #else
 
+#ifdef __ANDROID__
+	int screenFlags = SDL_SWSURFACE|SDL_HWPALETTE;
+#else
 	int screenFlags = SDL_HWSURFACE|SDL_HWPALETTE;
+#endif
 	if (!bx_options.autozoom.fixedsize) {
 		screenFlags |= SDL_RESIZABLE;
 	}
@@ -395,9 +488,8 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 		}
 	}
 
-	SetWMIcon();
-
 #ifdef USE_FIXED_CONSOLE_FBVIDEOMODE
+// Raspberry doesn't allow switching video mode. Keep current mode
 	const SDL_VideoInfo *videoInfo = SDL_GetVideoInfo();
 	if (!videoInfo->wm_available) {
 	   width = videoInfo->current_w;
@@ -406,6 +498,24 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 	}
 #endif
 
+	{
+		SDL_Rect **modes;
+		modes = SDL_ListModes(NULL, screenFlags);
+		if (modes != (SDL_Rect **)-1 && modes != (SDL_Rect **)0)
+		{
+			int i;
+			for (i = 0; modes[i] != NULL; i++)
+			{
+			}
+			if (i == 1)
+			{
+				width = modes[0]->w;
+				height = modes[0]->h;
+				bug("only one video mode, using %dx%d", width, height);
+			}
+		}
+	}
+	
 	screen = SDL_SetVideoMode(width, height, bpp, screenFlags);
 	if (screen==NULL) {
 		/* Try with default bpp */
@@ -418,22 +528,13 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 
 #endif
 
-	/* Flag is necessary for slower CPU. Without it will result in
-	   a nested Line A call, when returning from the called op */
-	static bool lineaActive = false;
-	if (ReadHWMemInt32(40) != 0 && !boot_lilo && !lineaActive)
-	{
-		lineaActive = true;
-		uae_u32 abase = linea68000(0xa000);
-		getARADATA()->setAbase(abase);
-		lineaActive = false;
-	}
-	
 	if (screen==NULL) {
 		panicbug("Can not set video mode");
 		QuitEmulator();
 		return;
 	}
+
+	SetWMIcon();
 
 	SDL_SetClipRect(screen, NULL);
 
@@ -452,6 +553,20 @@ void HostScreen::setVideoMode(int width, int height, int bpp)
 
 void HostScreen::resizeWindow(int new_width, int new_height)
 {
+	if (PendingConfigureNotifyWidth >= 0 &&
+		PendingConfigureNotifyHeight >= 0)
+	{
+		if (PendingConfigureNotifyWidth == new_width &&
+			PendingConfigureNotifyHeight == new_height)
+		{
+			/*
+			 * Event is from setVideoMode, so ignore.
+			 */
+			PendingConfigureNotifyWidth = -1;
+			PendingConfigureNotifyHeight = -1;
+		}
+		return;
+	}
 	this->new_width = new_width;
 	this->new_height = new_height;
 }
@@ -574,13 +689,10 @@ void HostScreen::checkSwitchVidelNfvdi(void)
 
 void HostScreen::refreshLogo(void)
 {
-	char path[1024];
-	getDataFilename(LOGO_FILENAME, path, sizeof(path));
-
-	if (!logo_present) {
-		return;
-	}
 	if (!logo) {
+		char path[1024];
+		getDataFilename(LOGO_FILENAME, path, sizeof(path));
+
 		logo = new Logo(path);
 		if (!logo) {
 			return;
@@ -589,13 +701,7 @@ void HostScreen::refreshLogo(void)
 
 	HostSurface *logo_hsurf = logo->getSurface();
 	if (!logo_hsurf) {
-		logo->load(path);
-		logo_hsurf = logo->getSurface();
-		if (!logo_hsurf) {
-			panicbug("Can not load logo from %s file\n", path); 
-			logo_present = false;
-			return;
-		}
+		return;
 	}
 
 	refreshSurface(logo_hsurf);
@@ -617,31 +723,14 @@ void HostScreen::forceRefreshLogo(void)
 
 void HostScreen::alphaBlendLogo(bool init)
 {
-	static int logo_opacity = 100;
-
-	if (init) {
-		logo_opacity = 100;
-	}
-	else {
-		if (bx_options.opengl.enabled && logo != NULL && logo_opacity > 0) {
-			HostSurface *logo_hsurf = logo->getSurface();
-			if (logo_hsurf != NULL) {
-				logo_hsurf->setParam(HostSurface::SURF_ALPHA, logo_opacity);
-				logo_hsurf->setDirtyRect(0, 0, logo_hsurf->getWidth(), logo_hsurf->getHeight());
-				drawSurfaceToScreen(logo_hsurf);
-			}
-
-			logo_opacity -= 5 * bx_options.video.refresh;
-			if (logo_opacity <= 0 && getVIDEL() != NULL && getVIDEL()->getSurface() != NULL && logo_hsurf != NULL) {
-				getVIDEL()->getSurface()->setDirtyRect(0, 0, logo_hsurf->getWidth(), logo_hsurf->getHeight());
-			}
-		}
-	}
+	if (logo)
+		logo->alphaBlend(init);
 }
+
 void HostScreen::checkSwitchToVidel(void)
 {
 	/* No logo ? */
-	if (!logo_present) {
+	if (!logo || !logo->getSurface()) {
 		numScreen = SCREEN_VIDEL;
 		return;
 	}
@@ -653,6 +742,13 @@ void HostScreen::checkSwitchToVidel(void)
 	}
 
 	if ((videl_hsurf->getWidth()>64) && (videl_hsurf->getHeight()>64)) {
+#if 0 /* set to 1 for debugging to make logo visible, if machine is too fast */
+		if (numScreen == SCREEN_LOGO && !bx_options.opengl.enabled)
+		{
+			SDL_Flip(screen);
+			usleep(1000000);
+		}
+#endif
 		numScreen = SCREEN_VIDEL;
 	}
 }
@@ -712,11 +808,27 @@ SDL_bool HostScreen::hideMouse(SDL_bool hide)
 {
 	SDL_bool current = hiddenMouse;
 	if (hide) {
-		SDL_ShowCursor(SDL_DISABLE);
+		SDL_SetCursor(empty_cursor);
+#if defined(SDL_VIDEO_DRIVER_X11)
+		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("x11"))
+			SDL_ShowCursor(SDL_DISABLE);
+#endif
+#if defined(SDL_VIDEO_DRIVER_QUARTZ)
+		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("Quartz"))
+			SDL_ShowCursor(SDL_DISABLE);
+#endif
 		hiddenMouse = SDL_TRUE;
 	}
 	else if (!hide) {
-		SDL_ShowCursor(SDL_ENABLE);
+		SDL_SetCursor(aranym_cursor);
+#if defined(SDL_VIDEO_DRIVER_X11)
+		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("x11"))
+			SDL_ShowCursor(SDL_ENABLE);
+#endif
+#if defined(SDL_VIDEO_DRIVER_QUARTZ)
+		if (bx_options.startup.grabMouseAllowed && SDL_IsVideoDriver("Quartz"))
+			SDL_ShowCursor(SDL_ENABLE);
+#endif
 		hiddenMouse = SDL_FALSE;
 	}
 	return current;
@@ -730,7 +842,8 @@ SDL_bool HostScreen::grabMouse(SDL_bool grab)
 		grabbedMouse = SDL_TRUE;
 		canGrabMouseAgain = true;
 		hideMouse(SDL_TRUE);
-//		IgnoreMouseMotionEvent(true);
+		if (bx_options.startup.grabMouseAllowed)
+			IgnoreMouseMotionEvent(true);
 	}
 	else if (!grab && current) {
 		SDL_SetWindowGrab(window, SDL_FALSE);
@@ -776,13 +889,18 @@ void HostScreen::grabTheMouse()
 
 void HostScreen::releaseTheMouse()
 {
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	// ToDo: If double mouse cursor appear in FB Mode do sthg. similar to below
+#else
 	const SDL_VideoInfo *videoInfo = SDL_GetVideoInfo();
 	if (!videoInfo->wm_available && hiddenMouse) return;
+#endif
 
 	D(bug("Releasing the mouse grab"));
 	grabMouse(SDL_FALSE);	// release mouse
 	hideMouse(SDL_FALSE);	// show it
-	if (getARADATA()->isAtariMouseDriver()) {
+	ARADATA *ara = getARADATA();
+	if (ara && ara->isAtariMouseDriver()) {
 		RememberAtariMouseCursorPosition();
 		WarpMouse(atari_mouse_xpos, atari_mouse_ypos);
 	}
@@ -792,7 +910,8 @@ void HostScreen::releaseTheMouse()
 // remember the current Atari mouse cursor position
 void HostScreen::RememberAtariMouseCursorPosition()
 {
-	if (getARADATA()->isAtariMouseDriver()) {
+	ARADATA *ara = getARADATA();
+	if (ara && ara->isAtariMouseDriver()) {
 		atari_mouse_xpos = getARADATA()->getAtariMouseX();
 		atari_mouse_ypos = getARADATA()->getAtariMouseY();
 		D(bug("Atari mouse cursor pointer left at [%d, %d]", atari_mouse_xpos, atari_mouse_ypos));
@@ -804,7 +923,7 @@ void HostScreen::RestoreAtariMouseCursorPosition()
 {
 	int xpos, ypos;
 	SDL_GetMouseState(&xpos, &ypos);
-	if (atari_mouse_xpos >=0 && atari_mouse_ypos >= 0) {
+	if (atari_mouse_xpos >= 0 && atari_mouse_ypos >= 0) {
 		D(bug("Restoring mouse cursor pointer to [%d, %d]", xpos, ypos));
 //		getARADATA()->setAtariMousePosition(xpos, ypos);
 		int delta_x = xpos - atari_mouse_xpos;
@@ -823,6 +942,18 @@ bool HostScreen::HasInputFocus()
 	return (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
 #else
 	return (SDL_GetAppState() & SDL_APPINPUTFOCUS) != 0;
+#endif
+}
+
+
+bool HostScreen::HasMouseFocus()
+{
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	Uint32 flags = SDL_GetWindowFlags(window);
+	return (flags & (SDL_WINDOW_MOUSE_FOCUS|SDL_WINDOW_SHOWN)) == (SDL_WINDOW_MOUSE_FOCUS|SDL_WINDOW_SHOWN);
+#else
+	Uint8 state = SDL_GetAppState();
+	return (state & (SDL_APPMOUSEFOCUS|SDL_APPACTIVE)) == (SDL_APPMOUSEFOCUS|SDL_APPACTIVE);
 #endif
 }
 
@@ -1181,11 +1312,14 @@ void HostScreen::bitplaneToChunky( uint16 *atariBitplaneData, uint16 bpp,
 			d = *source++;
 			break;
 		default:
+			{
+				uint16 *source16 = (uint16 *) source;
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
-			d = (*(uint16 *) source)<<16;
+				d = (*source16)<<16;
 #else
-			d = *(uint16 *) source;
+				d = *source16;
 #endif
+			}
 			break;
 	}
 

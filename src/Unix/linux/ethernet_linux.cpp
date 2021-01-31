@@ -49,10 +49,28 @@
  * Configuration zone ends
  **************************/
 
+TunTapEthernetHandler::TunTapEthernetHandler(int eth_idx)
+	: Handler(eth_idx),
+	fd(-1)
+{
+}
+
+TunTapEthernetHandler::~TunTapEthernetHandler()
+{
+	close();
+}
 
 bool TunTapEthernetHandler::open() {
 	// int nonblock = 1;
+	char *type = bx_options.ethernet[ethX].type;
 	char *devName = bx_options.ethernet[ethX].tunnel;
+
+	close();
+
+	if (strcmp(type, "none") == 0 || strlen(type) == 0)
+	{
+		return false;
+	}
 
 	// get the tunnel nif name if provided
 	if (strlen(devName) == 0) {
@@ -69,13 +87,13 @@ bool TunTapEthernetHandler::open() {
 	}
 
 	// if 'bridge' mode then we are done
-	if ( strcmp(bx_options.ethernet[ethX].type, "bridge") == 0 )
+	if ( strstr(bx_options.ethernet[ethX].type, "bridge") != NULL )
 		return true;
 
 	int pid = fork();
 	if (pid < 0) {
 		panicbug("TunTap(%d): ERROR: fork() failed. Ethernet disabled!", ethX);
-		::close(fd);
+		close();
 		return false;
 	}
 
@@ -95,29 +113,29 @@ bool TunTapEthernetHandler::open() {
 		_exit(result);
 	}
 
-	D(bug("TunTap(%d): waiting for "TAP_INIT" at pid %d", ethX, pid));
+	D(bug("TunTap(%d): waiting for " TAP_INIT " at pid %d", ethX, pid));
 	int status;
 	waitpid(pid, &status, 0);
 	bool failed = true;
 	if (WIFEXITED(status)) {
 		int err = WEXITSTATUS(status);
 		if (err == 255) {
-			panicbug("TunTap(%d): ERROR: "TAP_INIT" not found. Ethernet disabled!", ethX);
+			panicbug("TunTap(%d): ERROR: " TAP_INIT " not found. Ethernet disabled!", ethX);
 		}
 		else if (err != 0) {
-			panicbug("TunTap(%d): ERROR: "TAP_INIT" failed (code %d). Ethernet disabled!", ethX, err);
+			panicbug("TunTap(%d): ERROR: " TAP_INIT " failed (code %d). Ethernet disabled!", ethX, err);
 		}
 		else {
 			failed = false;
-			D(bug("TunTap(%d): "TAP_INIT" initialized OK", ethX));
+			D(bug("TunTap(%d): " TAP_INIT " initialized OK", ethX));
 		}
 	} else {
-		panicbug("TunTap(%d): ERROR: "TAP_INIT" could not be started. Ethernet disabled!", ethX);
+		panicbug("TunTap(%d): ERROR: " TAP_INIT " could not be started. Ethernet disabled!", ethX);
 	}
 
 	// Close /dev/net/tun device if exec failed
 	if (failed) {
-		::close(fd);
+		close();
 		return false;
 	}
 
@@ -127,12 +145,15 @@ bool TunTapEthernetHandler::open() {
 	return true;
 }
 
-bool TunTapEthernetHandler::close() {
-	// Close /dev/net/tun device
-	::close(fd);
+void TunTapEthernetHandler::close() {
 	D(bug("TunTap(%d): close", ethX));
 
-	return true;
+	// Close /dev/net/tun device
+	if (fd > 0)
+	{
+		::close(fd);
+		fd = -1;
+	}
 }
 
 int TunTapEthernetHandler::recv(uint8 *buf, int len) {
@@ -162,7 +183,7 @@ int TunTapEthernetHandler::send(const uint8 *buf, int len) {
  */
 int TunTapEthernetHandler::tapOpenOld(char *dev)
 {
-    char tapname[14];
+    char tapname[sizeof(bx_options.ethernet[0].tunnel) + 5];
     int i, fd;
 
     if( *dev ) {
@@ -224,7 +245,7 @@ int TunTapEthernetHandler::tapOpen(char *dev)
     return fd;
 
   failed:
-    ::close(fd);
+    close();
     return -1;
 }
 

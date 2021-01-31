@@ -18,12 +18,13 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include "sysdeps.h"
 #include "SDL_compat.h"
 
 #include "sysdeps.h"
 #include "hardware.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "hostscreen.h"
 #include "host.h"
 #include "icio.h"

@@ -31,15 +31,16 @@ private:
 	uae_u32 abase;
 	int mouse_x, mouse_y;
 
+	void reset();
+
 public:
 	ARADATA(memptr, uint32);
-	void reset();
 	virtual uint8 handleRead(memptr addr);
 	virtual void handleWrite(memptr addr, uint8 value);
 	bool isAtariMouseDriver()	{ return abase != 0 || mouseDriver; }
 	int getAtariMouseX();
 	int getAtariMouseY();
 	void setAtariMousePosition(int x, int y) { mouse_x = x; mouse_y = y; }
-	void setAbase(memptr addr) { abase = addr; }
+	void setAbase(memptr new_abase);
 };
 #endif /* _ARADATA */

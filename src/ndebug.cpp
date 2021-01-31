@@ -21,10 +21,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-
 #include "sysdeps.h"
 
-#include "memory.h"
+#include "memory-uae.h"
 #include "newcpu.h"
 #include "m68k.h"
 #include "cpu_emulation.h"
@@ -41,7 +40,11 @@
 #include <cerrno>
 #include <assert.h>
 
-#ifndef HAVE_GNU_SOURCE
+#if defined(__ANDROID__)
+# include <android/log.h>
+#endif
+
+#ifndef HAVE_VASPRINTF
 
 /* NDEBUG needs vasprintf, implementation in GNU binutils (libiberty) */
 extern "C" int vasprintf(char **, const char *, va_list);
@@ -49,8 +52,8 @@ extern "C" int vasprintf(char **, const char *, va_list);
 #endif
 
 #include "parameters.h"
+#include "main.h"	/* QuitEmulator */
 
-extern void QuitEmulator(void);
 
 #ifndef HAVE_STRDUP
 extern "C" char *strdup(const char *s)
@@ -75,7 +78,25 @@ uaecptr history[MAX_HIST];
 
 #ifdef DEBUGGER
 
+#if defined(HAVE_TERMIOS_H)
 termios ndebug::savetty;
+#define get1char() read(0, buffer, sizeof(buffer)) > 0
+#elif defined(_WIN32)
+#include <conio.h>
+#define tcsetattr(a, b, c)
+#define get1char() _get1char(buffer)
+static inline int _get1char(char *buffer)
+{
+	int c;
+	c = _getch();
+	if (c == EOF)
+		return false;
+	buffer[0] = c;
+	return true;
+}
+#else
+ you loose
+#endif
 bool ndebug::issavettyvalid = false;
 unsigned int ndebug::rowlen = 78;
 //unsigned int ndebug::dbsize = 1000;
@@ -184,21 +205,34 @@ void ndebug::dbprintf(const char *s, ...)
 	va_list a;
 #ifdef DEBUGGER
 	{
+		int ret;
+		char *buf;
+		
 		if (dbbuffer[dbend] != NULL)
+		{
 			free(dbbuffer[dbend]);
+			dbbuffer[dbend] = NULL;
+		}
 		va_start(a, s);
-		vasprintf(&dbbuffer[dbend++], s, a);
+		ret = vasprintf(&buf, s, a);
 		va_end(a);
-		if (dbend == dbsize) dbend = 0;
-		if (dbstart == dbend) dbstart++;
-		if (dbstart == dbsize) dbstart = 0;
-		reset_actualrow();
+		if (ret >= 0)
+		{
+			dbbuffer[dbend++] = buf;
+			if (dbend == dbsize) dbend = 0;
+			if (dbstart == dbend) dbstart++;
+			if (dbstart == dbsize) dbstart = 0;
+			reset_actualrow();
+		}
 	}
 #endif
 	{
 		va_start(a, s);
 		vfprintf(stderr, s, a);
 		fprintf(stderr, "\n");
+#ifdef __ANDROID__
+		__android_log_vprint(ANDROID_LOG_INFO, "Aranym", s, a);
+#endif
 		va_end(a);
 		fflush(stderr);
 	}
@@ -207,23 +241,45 @@ void ndebug::dbprintf(const char *s, ...)
 void ndebug::pdbprintf(const char *s, ...)
 {
 	va_list a;
+	va_start(a, s);
+	ndebug::pdbvprintf(s, a);
+	va_end(a);
+}
+
+void ndebug::pdbvprintf(const char *s, va_list a)
+{
 #ifdef DEBUGGER
 	{
+		int ret;
+		char *buf;
+		va_list a2;
+		
 		if (dbbuffer[dbend] != NULL)
+		{
 			free(dbbuffer[dbend]);
-		va_start(a, s);
-		vasprintf(&dbbuffer[dbend++], s, a);
-		va_end(a);
-		if (dbend == dbsize) dbend = 0;
-		if (dbstart == dbend) dbstart++;
-		if (dbstart == dbsize) dbstart = 0;
-		reset_actualrow();
+			dbbuffer[dbend] = NULL;
+		}
+		va_copy(a2, a);
+		ret = vasprintf(&buf, s, a2);
+		if (ret >= 0)
+		{
+			dbbuffer[dbend++] = buf;
+			if (dbend == dbsize) dbend = 0;
+			if (dbstart == dbend) dbstart++;
+			if (dbstart == dbsize) dbstart = 0;
+			reset_actualrow();
+		}
 	}
 #endif
-	va_start(a, s);
 	vfprintf(stderr, s, a);
 	fprintf(stderr, "\n");
-	va_end(a);
+#ifdef __ANDROID__
+	{
+		va_list a2;
+		va_copy(a2, a);
+		__android_log_vprint(ANDROID_LOG_INFO, "Aranym", s, a2);
+	}
+#endif
 	fflush(stderr);
 }
 
@@ -276,7 +332,7 @@ void ndebug::m68k_print(FILE * f)
 			(unsigned long) m68k_dreg(regs, 7), (unsigned long) regs.vbr);
 	fprintf(f, "T=%d%d S=%d M=%d X=%d N=%d Z=%d V=%u C=%u           TC=%04x\n",
 	    regs.t1, regs.t0, regs.s, regs.m,
-	    (int)GET_XFLG, (int)GET_NFLG, (int)GET_ZFLG, (unsigned)GET_VFLG, (unsigned)GET_CFLG,
+	    (int)GET_XFLG(), (int)GET_NFLG(), (int)GET_ZFLG(), (unsigned)GET_VFLG(), (unsigned)GET_CFLG(),
 	    		   (unsigned int) ((((int) regs.mmu_enabled) << 15) |
 				(((int) regs.mmu_pagesize_8k) << 14)));
 
@@ -606,18 +662,23 @@ void ndebug::log2phys(FILE *, uaecptr addr) {
 
 unsigned int ndebug::get_len() {
 // Derived from pine 4.21 - termout.unx
+#if defined(HAVE_TERMIOS_H)
      struct winsize win;
-     if(ioctl(1, TIOCGWINSZ, &win) >= 0			/* 1 is stdout */
-	|| ioctl(0, TIOCGWINSZ, &win) >= 0){		/* 0 is stdin */
-	if (win.ws_row == 0) {
-          fprintf(stderr, "ioctl(TIOCWINSZ) failed\n");
-	  exit(-1);
-	}
-    } else {
-      fprintf(stderr, "ioctl(TIOCWINSZ) failed\n");
-      exit(-1);
-    }
-    return win.ws_row;
+     if ((ioctl(1, TIOCGWINSZ, &win) >= 0 ||		/* 1 is stdout */
+	      ioctl(0, TIOCGWINSZ, &win) >= 0) &&		/* 0 is stdin */
+	      win.ws_row != 0)
+	 {
+		return win.ws_row;
+	 }
+    fprintf(stderr, "ioctl(TIOCWINSZ) failed\n");
+    exit(2);
+    return -1;
+#elif defined(_WIN32)
+	CONSOLE_SCREEN_BUFFER_INFO info;
+	if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
+		return info.dwMaximumWindowSize.Y;
+	return 24;
+#endif
 }
 
 void ndebug::showTypes() {
@@ -657,9 +718,9 @@ int ndebug::canon(FILE *f, uaecptr nextpc, uaecptr &nxdis, uaecptr &nxmem) {
 		case 'Q':
 			fprintf(f, "Really quit?\n");
 			if (fgets(input, 80, stdin) == NULL)
-				QuitEmulator();
+				QuitEmulator(0);
 			if (input[0] == 'y' || input[0] == 'Y')
-				QuitEmulator();
+				QuitEmulator(0);
 			break;
 		case 'R':
 			m68k_reset();
@@ -916,7 +977,6 @@ int ndebug::icanon(FILE *f, uaecptr, uaecptr &nxdis, uaecptr &nxmem) {
 	if (!issavettyvalid)
 		return(0);
 	
-	struct termios newtty;
 	char buffer[1];
 	int count;
 	uae_u32 daddr;
@@ -925,6 +985,8 @@ int ndebug::icanon(FILE *f, uaecptr, uaecptr &nxdis, uaecptr &nxmem) {
 	show(f);
 	fprintf(f, "|");
 	fflush(f);
+#if defined(HAVE_TERMIOS_H)
+	struct termios newtty;
 	newtty = savetty;
 	newtty.c_lflag &= ~ICANON;
 	newtty.c_lflag &= ~ECHO;
@@ -932,10 +994,11 @@ int ndebug::icanon(FILE *f, uaecptr, uaecptr &nxdis, uaecptr &nxmem) {
 	newtty.c_cc[VTIME] = 1;
 	if (tcsetattr(0, TCSAFLUSH, &newtty) == -1) {
 		fprintf(stderr, "tcsetattr error\n");
-		exit(-1);
+		exit(2);
 	}
+#endif
 	for (;;) {
-		if (read(0, buffer, sizeof(buffer))) {
+		if (get1char()) {
 			switch (buffer[0]) {
 				case 't':
 					SPCFLAGS_SET( SPCFLAG_BRK );
@@ -951,7 +1014,7 @@ int ndebug::icanon(FILE *f, uaecptr, uaecptr &nxdis, uaecptr &nxmem) {
 					fflush(stderr);
 					newm68k_disasm(f, daddr, &nxdis, count);
 					tcsetattr(0, TCSAFLUSH, &newtty);
-					assert(read(0, buffer, sizeof(buffer)) >= 0);
+					assert(get1char());
 					break;
 				case 'm':
 					maddr = nxmem;
@@ -961,7 +1024,7 @@ int ndebug::icanon(FILE *f, uaecptr, uaecptr &nxdis, uaecptr &nxmem) {
 					fflush(stderr);
 					dumpmem(f, maddr, &nxmem, count);
 					tcsetattr(0, TCSAFLUSH, &newtty);
-					assert(read(0, buffer, sizeof(buffer)) >= 0);
+					assert(get1char());
 					break;
 				case 'T':
 					maddr = nxmem;
@@ -1000,11 +1063,12 @@ int ndebug::dm(FILE *f, uaecptr, uaecptr &, uaecptr &nxmem) {
 	if (!issavettyvalid)
 		return(0);
 
-	struct termios newtty;
 	char buffer[1];
 	int count;
 	uae_u32 maddr;
 
+#if defined(HAVE_TERMIOS_H)
+	struct termios newtty;
 	newtty = savetty;
 	newtty.c_lflag &= ~ICANON;
 	newtty.c_lflag &= ~ECHO;
@@ -1012,8 +1076,9 @@ int ndebug::dm(FILE *f, uaecptr, uaecptr &, uaecptr &nxmem) {
 	newtty.c_cc[VTIME] = 1;
 	if (tcsetattr(0, TCSAFLUSH, &newtty) == -1) {
 		fprintf(stderr, "tcsetattr error\n");
-		exit(-1);
+		exit(2);
 	}
+#endif
 	for (;;) {
 		maddr = nxmem;
 		count = (get_len() - 2) / 2;
@@ -1022,7 +1087,7 @@ int ndebug::dm(FILE *f, uaecptr, uaecptr &, uaecptr &nxmem) {
 		fflush(stderr);
 		dumpmem(f, maddr, &nxmem, count);
 		tcsetattr(0, TCSAFLUSH, &newtty);
-		if (read(0, buffer, sizeof(buffer)) > 0) {
+		if (get1char()) {
 			switch (buffer[0]) {
 				case 't':
 					nxmem = maddr;
@@ -1135,7 +1200,15 @@ void ndebug::run() {
 
 	irqindebug = false;
 	// release keyboard and mouse control
-	SDL_bool wasGrabbed = grabMouse(SDL_FALSE);
+	SDL_bool wasGrabbed;
+	HostScreen *video;
+	if (host && (video = host->video) != NULL)
+	{
+		wasGrabbed = grabMouse(SDL_FALSE);
+		video->releaseTheMouse();
+	} else {
+		wasGrabbed = SDL_FALSE;
+	}
 
 	uaecptr nextpc, nxdis, nxmem;
 	newm68k_disasm(stderr, m68k_getpc(), &nextpc, 0);
@@ -1157,37 +1230,45 @@ void ndebug::run() {
 				break;
 		}
 	}
-	if (wasGrabbed) grabMouse(SDL_TRUE);
+	if (wasGrabbed) video->grabTheMouse();
+	if (!SPCFLAGS_TEST(SPCFLAG_BRK))
+		debugging = false;
 }
 
 void ndebug::init()
 {
 	if ((dbbuffer = (char **) malloc(dbsize * sizeof(char *))) == NULL) {
 		fprintf(stderr, "Not enough memory!");
-		exit(-1);
+		exit(2);
 	}
 	for (unsigned int i = 0; i < dbsize; i++)
 		dbbuffer[i] = NULL;
 	for (unsigned int i = 0; i < max_breakpoints; i++)
 		breakpoint[i] = false;
+#if defined(HAVE_TERMIOS_H)
 	if (tcgetattr(0, &savetty) == -1) {
 		fprintf(stderr, "tcgetattr error: %d!\n", errno);
-	} else {
+	} else
+#endif
+	{
 		issavettyvalid = true;
 	}
 }
 
 void ndebug::nexit() {
 	if (issavettyvalid)
+	{
 		tcsetattr(0, TCSAFLUSH, &savetty);
-
+	}
+	
 	issavettyvalid = false;
 }
 
-void ndebug::dumpmem(FILE *f, VOLATILE uaecptr addr, uaecptr * nxmem, unsigned int lns)
+void ndebug::dumpmem(FILE *f, VOLATILE uaecptr addr, uaecptr * nxmem, unsigned int _lns)
 {
 	SAVE_EXCEPTION;
 	VOLATILE uaecptr a;
+	VOLATILE unsigned int lns = _lns;
 	broken_in = 0;
 	for (; lns-- && !broken_in;) {
 		VOLATILE int i;
@@ -1286,7 +1367,7 @@ char *ndebug::dectobin (uae_u32 val)
 	char *s = (char *)malloc(sizeof(char));
 	if (s == NULL) {
 		fprintf(stderr, "Not enough memory!");
-		exit(-1);
+		exit(2);
 	}
 
 	while (val)
@@ -1294,13 +1375,13 @@ char *ndebug::dectobin (uae_u32 val)
 		char *ps = strdup(s);
 		if (ps == NULL) {
 			fprintf(stderr, "Not enough memory!");
-			exit(-1);
+			exit(2);
 		}
 		free(s);
 		s = (char *)malloc((strlen(ps) + 2) * sizeof(char));
 		if (s == NULL) {
 			fprintf(stderr, "Not enough memory!");
-			exit(-1);
+			exit(2);
 		}
 		s[0] = val % 2 + '0';
 		val /= 2;

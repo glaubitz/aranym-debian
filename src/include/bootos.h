@@ -26,12 +26,13 @@
 class BootOs
 {
 	protected:
-		virtual void init(void);
-		virtual void load(const char *filename) throw (AranymException);
+		virtual void init(bool cold);
+		virtual void load(const char *filename) ARANYM_THROWS(AranymException);
 
 	public:
 		virtual ~BootOs() {};
-		virtual void reset(void);
+		virtual void reset(bool cold);
+		virtual const char *type() = 0;
 };
 
 extern BootOs *bootOs;

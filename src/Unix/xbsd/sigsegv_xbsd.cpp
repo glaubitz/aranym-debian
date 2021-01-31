@@ -30,7 +30,7 @@
 
 #include "sysdeps.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #define DEBUG 0
 #include "debug.h"
 
@@ -41,8 +41,11 @@ typedef void (*sighandler_t)(int);
 #endif
 
 #if defined(OS_freebsd)
+#include <ucontext.h>
+
 enum {
 #ifdef CPU_i386
+#	define CONTEXT_REGS    ((uae_u32 *)&CONTEXT_NAME->uc_mcontext.mc_edi)
 	REG_EDI = 0,
 	REG_ESI = 1,
 	REG_EBP = 2,
@@ -55,6 +58,7 @@ enum {
 	REG_ESP = 13,
 #endif
 #if defined(CPU_x86_64)
+#	define CONTEXT_REGS    ((uae_u64 *)&CONTEXT_NAME->uc_mcontext.mc_rdi)
 	REG_RDI = 0,
 	REG_RSI = 1,
 	REG_RDX = 2,
@@ -74,11 +78,56 @@ enum {
 	REG_R14 = 13,
 	REG_R15 = 14,
 
-	REG_EFL = 19,
+	REG_EFL = 21,
 
-	REG_RIP = 23,
+	REG_RIP = 19,
 
-	REG_RSP = 26,
+	REG_RSP = 22,
+
+#endif
+};
+#endif
+
+#if defined(OS_openbsd)
+enum {
+#ifdef CPU_i386
+#	define CONTEXT_REGS    ((uae_u32 *)&CONTEXT_NAME->sc_edi)
+	REG_EDI = 0,
+	REG_ESI = 1,
+	REG_EBP = 2,
+	REG_EBX = 3,
+	REG_EDX = 4,
+	REG_ECX = 5,
+	REG_EAX = 6,
+	REG_EIP = 7,
+	REG_EFL = 8,
+	REG_ESP = 9,
+#endif
+#if defined(CPU_x86_64)
+#	define CONTEXT_REGS    ((uae_u64 *)&CONTEXT_NAME->sc_rdi)
+	REG_RDI = 0,
+	REG_RSI = 1,
+	REG_RDX = 2,
+	REG_RCX = 3,
+
+	REG_R8  = 4,
+	REG_R9  = 5,
+	REG_R10 = 6,
+	REG_R11 = 7,
+	REG_R12 = 8,
+	REG_R13 = 9,
+	REG_R14 = 10,
+	REG_R15 = 11,
+
+	REG_RBP = 12,
+	REG_RBX = 13,
+	REG_RAX = 14,
+
+	REG_RIP = 21,
+
+	REG_EFL = 23,
+
+	REG_RSP = 24,
 
 #endif
 };
@@ -100,11 +149,6 @@ enum {
 #define CONTEXT_NAME	uap
 #define CONTEXT_TYPE	volatile ucontext_t
 #define CONTEXT_ATYPE	CONTEXT_TYPE *
-#ifdef CPU_i386
-#	define CONTEXT_REGS    ((uae_u32 *)&CONTEXT_NAME->uc_mcontext.mc_edi)
-#else
-#	define CONTEXT_REGS    ((uae_u64 *)&CONTEXT_NAME->uc_mcontext.mc_rdi)
-#endif
 #define CONTEXT_AEFLAGS	CONTEXT_REGS[REG_EFL]
 #define CONTEXT_AEIP	CONTEXT_REGS[REG_RIP]
 #define CONTEXT_AEAX	CONTEXT_REGS[REG_RAX]
@@ -118,9 +162,41 @@ enum {
 
 #include "sigsegv_common_x86.h"
 
-static void segfault_vec(int /* sig */, siginfo_t *sip, void *CONTEXT_NAME)
+static void segfault_vec(int /* sig */, siginfo_t *sip, void *_ucp)
 {
-	handle_access_fault((CONTEXT_ATYPE) CONTEXT_NAME, (memptr)(uintptr)((char *)sip->si_addr /* CONTEXT_REGS[REG_CR2] */ - FMEMORY));
+	CONTEXT_ATYPE CONTEXT_NAME = (CONTEXT_ATYPE) _ucp;
+	char *fault_addr = (char *)sip->si_addr;
+	memptr addr = (memptr)(uintptr)(fault_addr - fixed_memory_offset);
+#if DEBUG
+	if (addr >= 0xff000000)
+		addr &= 0x00ffffff;
+	if (addr < 0x00f00000 || addr > 0x00ffffff) // YYY
+		bug("\nsegfault: pc=%08x, " REG_RIP_NAME " =%p, addr=%p (0x%08x)", m68k_getpc(), (void *)CONTEXT_AEIP, fault_addr, addr);
+	if (fault_addr < (char *)(fixed_memory_offset - 0x1000000UL)
+#ifdef CPU_x86_64
+		|| fault_addr >= ((char *)fixed_memory_offset + 0x100000000UL)
+#endif
+		)
+	{
+#ifdef HAVE_DISASM_X86
+		if (CONTEXT_AEIP != 0)
+		{
+			char buf[256];
+			
+			x86_disasm((const uint8 *)CONTEXT_AEIP, buf, 1);
+			panicbug("%s", buf);
+		}
+#endif
+		// raise(SIGBUS);
+	}
+#endif
+	if (fault_addr == 0 || CONTEXT_AEIP == 0)
+	{
+		real_segmentationfault();
+		/* not reached (hopefully) */
+		return;
+	}
+	handle_access_fault((CONTEXT_ATYPE) CONTEXT_NAME, addr);
 }
 
 void install_sigsegv() {

@@ -58,7 +58,6 @@ class HostScreen: public DirtyRects
 	SDL_bool OpenGLVdi;	/* Using NF OpenGL VDI renderer ? */
 
 	Logo *logo;
-	bool logo_present;
 	bool clear_screen, force_refresh, do_screenshot;
 
 	int	refreshCounter;
@@ -75,6 +74,8 @@ class HostScreen: public DirtyRects
 	int atari_mouse_xpos;
 	int atari_mouse_ypos;
 
+	bool recording;
+	
   protected:
 	static const int MIN_WIDTH = 640;
 	static const int MIN_HEIGHT = 480;
@@ -85,20 +86,23 @@ class HostScreen: public DirtyRects
 	SDL_Texture *texture;
 #endif
 	int new_width, new_height;
+	int PendingConfigureNotifyWidth, PendingConfigureNotifyHeight;
+
 	uint16 snapCounter; // ALT+PrintScreen to make a snap?
 
 	virtual void setVideoMode(int width, int height, int bpp);
 
 	// Create a BMP file with a snapshot of the screen surface
+	void writeSnapshot(SDL_Surface *surf);
 	virtual void makeSnapshot(void);
 
 	virtual void refreshScreen(void);
 	virtual void initScreen(void);
 	virtual void clearScreen(void);
+  public:
 	virtual void drawSurfaceToScreen(HostSurface *hsurf,
 		int *dst_x = NULL, int *dst_y = NULL);
 
-  public:
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	SDL_Window *window;
 	Uint32 window_id;
@@ -174,6 +178,11 @@ class HostScreen: public DirtyRects
 	void RememberAtariMouseCursorPosition();
 	void RestoreAtariMouseCursorPosition();
 	bool HasInputFocus();
+	bool HasMouseFocus();
+
+	virtual bool Recording(void) { return recording; }
+	virtual void StartRecording() { recording = true; }
+	virtual void StopRecording() { recording = false; }
 };
 
 #endif

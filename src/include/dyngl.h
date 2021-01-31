@@ -34,8 +34,8 @@ extern "C" {
 /*--- Structures ---*/
 
 typedef struct {
-#define GL_PROC(type, gl, name, export, upper, params, first, ret) type (APIENTRY *name) params ;
-#define GLU_PROC(type, gl, name, export, upper, params, first, ret)
+#define GL_PROC(type, gl, name, export, upper, proto, args, first, ret) type (APIENTRY *name) proto ;
+#define GLU_PROC(type, gl, name, export, upper, proot, args, first, ret)
 #include "../../atari/nfosmesa/glfuncs.h"
 } dyngl_funcs;
 
@@ -45,7 +45,7 @@ extern dyngl_funcs gl;
 
 /*--- Functions ---*/
 
-int dyngl_load(char *filename);
+int dyngl_load(const char *filename);
 
 #ifdef __cplusplus
 }

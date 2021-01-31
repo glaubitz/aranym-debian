@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * The ARAnyM MetaDOS driver.
  *
  * 2002 STan
@@ -38,15 +36,13 @@
  *
  */
 
-# include "k_fds.h"
-# include "mint/filedesc.h"
-# include "mint/stat.h"
-# include "mint/emu_tos.h"
+#include "hostfs.h"
+#include "mint/errno.h"
+#include "mint/fcntl.h"
+#include "mint/credentials.h"
+#include "mint/assert.h"
+#include "mint/string.h"
 
-# include "filesys.h"
-
-# include "mintproc.h"
-# include "mintfake.h"
 
 /* do_open(f, name, rwmode, attr, x)
  *
@@ -59,10 +55,10 @@
 long
 do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 
 	fcookie dir, fc;
-	long devsp;
+	long devsp = 0;
 	DEVDRV *dev;
 	long r;
 	XATTR xattr;
@@ -71,14 +67,12 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	char temp1[PATH_MAX];
 	short cur_gid, cur_egid;
 
-
 	TRACE (("do_open(%s)", name));
-
 
 	/*
 	 * first step: get a cookie for the directory
 	 */
-	r = path2cookie (name, temp1, &dir);
+	r = path2cookie (p, name, temp1, &dir);
 	if (r)
 	{
 		DEBUG (("do_open(%s): error %ld", name, r));
@@ -86,9 +80,19 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	}
 
 	/*
+	 * If temp1 is a NULL string, then use the name again.
+	 *
+	 * This can occur when trying to open the ROOT directory of a
+	 * drive. i.e. /, or C:/ or D:/ etc.
+	 */
+	if (*temp1 == '\0') {
+		strncpy(temp1, name, PATH_MAX);
+	}
+
+	/*
 	 * second step: try to locate the file itself
 	 */
-	r = relpath2cookie (&dir, temp1, follow_links, &fc, 0);
+	r = relpath2cookie (p, &dir, temp1, follow_links, &fc, 0);
 
 # ifdef CREATE_PIPES
 	/*
@@ -96,21 +100,21 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	 *	...or if this is Fcreate with nonzero attr on the pipe filesystem
 	 */
 	if ((r == 0) && ((rwmode & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL) ||
-					 (attr && fc.fs == &pipe_filesys &&
-					  (rwmode & (O_CREAT|O_TRUNC)) == (O_CREAT|O_TRUNC))))
+			(attr && fc.fs == &pipe_filesys &&
+			(rwmode & (O_CREAT|O_TRUNC)) == (O_CREAT|O_TRUNC))))
 # else
-		/*
-		 * file found: this is an error if (O_CREAT|O_EXCL) are set
-		 */
-		if ((r == 0) && ((rwmode & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL)))
+	/*
+	 * file found: this is an error if (O_CREAT|O_EXCL) are set
+	 */
+	if ((r == 0) && ((rwmode & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL)))
 # endif
-		{
-			DEBUG (("do_open(%s): file already exists", name));
-			release_cookie (&fc);
-			release_cookie (&dir);
+	{
+		DEBUG (("do_open(%s): file already exists", name));
+		release_cookie (&fc);
+		release_cookie (&dir);
 
-			return EACCES;
-		}
+		return EACCES;
+	}
 
 	/* file not found: maybe we should create it
 	 * note that if r != 0, the fc cookie is invalid (so we don't need to
@@ -120,16 +124,18 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	{
 		/* check first for write permission in the directory */
 		r = xfs_getxattr (dir.fs, &dir, &xattr);
+#if 0
 		if (r == 0)
 		{
-			if (denyaccess (&xattr, S_IWOTH))
+			if (denyaccess (p->p_cred->ucr, &xattr, S_IWOTH))
 				r = EACCES;
 		}
+#endif
 
 		if (r)
 		{
 			DEBUG(("do_open(%s): couldn't get "
-				   "write permission on directory", name));
+			      "write permission on directory", name));
 			release_cookie (&dir);
 			return r;
 		}
@@ -151,7 +157,7 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 		assert (p->p_cwd);
 
 		r = xfs_creat (dir.fs, &dir, temp1,
-					   (S_IFREG|DEFAULT_MODE) & (~p->p_cwd->cmask), attr, &fc);
+			(S_IFREG|DEFAULT_MODE) & (~p->p_cwd->cmask), attr, &fc);
 
 		p->p_cred->rgid = cur_gid;
 		p->p_cred->ucr->egid = cur_egid;
@@ -159,7 +165,7 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 		if (r)
 		{
 			DEBUG(("do_open(%s): error %ld while creating file",
-				   name, r));
+				name, r));
 			release_cookie (&dir);
 			return r;
 		}
@@ -169,7 +175,7 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	else if (r)
 	{
 		DEBUG(("do_open(%s): error %ld while searching for file",
-			   name, r));
+			name, r));
 		release_cookie (&dir);
 		return r;
 	}
@@ -183,17 +189,19 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	r = xfs_getxattr (fc.fs, &fc, &xattr);
 	if (r)
 	{
-		DEBUG(("do_open(%s): couldn't get file attributes",name));
+		DEBUG(("do_open(%s): couldn't get file attributes", name));
 		release_cookie (&dir);
 		release_cookie (&fc);
 		return r;
 	}
 
+	DEBUG(("do_open(%s): mode 0x%x", name, xattr.mode));
+
 	/* we don't do directories
 	 */
-	if ((xattr.mode & S_IFMT) == S_IFDIR)
+	if (S_ISDIR(xattr.mode))
 	{
-		DEBUG(("do_open(%s): file is a directory",name));
+		DEBUG(("do_open(%s): file is a directory", name));
 		release_cookie (&dir);
 		release_cookie (&fc);
 		return ENOENT;
@@ -225,15 +233,14 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 			perm = S_IROTH;
 			break;
 		default:
-			perm = 0;
-			ALERT ("do_open: bad file access mode: %x", rwmode);
+			break;
 	}
 
 	/* access checking;  additionally, the superuser needs at least one
 	 * execute right to execute a file
 	 */
 	if ((exec_check && ((xattr.mode & (S_IXUSR|S_IXGRP|S_IXOTH)) == 0))
-		|| (!creating && denyaccess (&xattr, perm)))
+		|| (!creating && 0 /* denyaccess (p->p_cred->ucr, &xattr, perm) */))
 	{
 		DEBUG(("do_open(%s): access to file denied", name));
 		release_cookie (&dir);
@@ -246,7 +253,7 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 	 * we just created the file, or unless the file is on the proc
 	 * file system and hence FA_RDONLY has a different meaning)
 	 */
-	if (!creating && (xattr.attr & FA_RDONLY) && fc.fs != &proc_filesys)
+	if (!creating && (xattr.attr & FA_RDONLY))
 	{
 		if ((rwmode & O_RWMODE) == O_RDWR || (rwmode & O_RWMODE) == O_WRONLY)
 		{
@@ -296,8 +303,8 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 
 		(*f)->links--;
 		FP_FREE (*f);
-		*f = fp;
 
+		*f = fp;
 		fp->links++;
 
 		release_cookie (&dir);
@@ -322,53 +329,7 @@ do_open (FILEPTR **f, const char *name, int rwmode, int attr, XATTR *x)
 		return r;
 	}
 
-#ifndef ARAnyM_MetaDOS
-	/* special code for opening a tty */
-	if (is_terminal (*f))
-	{
-		struct tty *tty;
-
-		tty = (struct tty *) ((*f)->devinfo);
-
-		/* in the middle of a hangup */
-		while (tty->hup_ospeed && !creating)
-			sleep (IO_Q, (long) &tty->state);
-
-		tty->use_cnt++;
-
-		/* first open for this device (not counting set_auxhandle)? */
-		if ((!tty->pgrp && tty->use_cnt-tty->aux_cnt <= 1)
-			|| tty->use_cnt <= 1)
-		{
-			short s = tty->state & (TS_BLIND|TS_HOLD|TS_HPCL);
-			short u = tty->use_cnt;
-			short a = tty->aux_cnt;
-			long r = tty->rsel;
-			long w = tty->wsel;
-			*tty = default_tty;
-
-			if (!creating)
-				tty->state = s;
-
-			if ((tty->use_cnt = u) > 1 || !creating)
-			{
-				tty->aux_cnt = a;
-				tty->rsel = r;
-				tty->wsel = w;
-			}
-
-			if (!((*f)->flags & O_HEAD))
-				tty_ioctl (*f, TIOCSTART, 0);
-		}
-
-# if 0
-		/* XXX fn: wait until line is online */
-		if (!((*f)->flags & O_NDELAY) && (tty->state & TS_BLIND))
-			(*f->dev->ioctl)((*f), TIOCWONLINE, 0);
-# endif
-	}
-#endif // ARAnyM_MetaDOS
-
+	DEBUG(("do_open(%s) -> 0", name));
 	return 0;
 }
 
@@ -399,71 +360,12 @@ do_close (struct proc *p, FILEPTR *f)
 	 * (this is just in case we were killed by a signal)
 	 */
 
-#ifndef ARAnyM_MetaDOS
-	/* BUG? Feature? If media change is detected while we're doing the select,
-	 * we'll never unselect (since f->dev is set to NULL by changedrv())
-	 */
-	if (f->dev)
-	{
-		(*f->dev->unselect)(f, (long) p, O_RDONLY);
-		(*f->dev->unselect)(f, (long) p, O_WRONLY);
-		(*f->dev->unselect)(f, (long) p, O_RDWR);
-		wake (SELECT_Q, (long) &select_coll);
-	}
-#endif // ARAnyM_MetaDOS
-
 	f->links--;
 	if (f->links < 0)
 	{
-		ALERT ("do_close on invalid file struct! (links = %i)", f->links);
-		//		return 0;
+		DEBUG(("do_close on invalid file struct! (links = %i)", f->links));
+		/*		return 0; */
 	}
-
-#ifndef ARAnyM_MetaDOS
-	/* TTY manipulation must be done *before* calling the device close routine,
-	 * since afterwards the TTY structure may no longer exist
-	 */
-	if (is_terminal (f) && f->links <= 0)
-	{
-		struct tty *tty = (struct tty *) f->devinfo;
-		TIMEOUT *t;
-		long ospeed = -1L, z = 0;
-
-		/* for HPCL ignore ttys open as /dev/aux, else they would never hang up */
-		if (tty->use_cnt-tty->aux_cnt <= 1)
-		{
-			if ((tty->state & TS_HPCL) && !tty->hup_ospeed &&
-			    !(f->flags & O_HEAD) &&
-			    (*f->dev->ioctl)(f, TIOCOBAUD, &ospeed) >= 0 &&
-			    NULL != (t = addroottimeout(500L, (to_func *)hangup_b1, 0))) {
-				/* keep device open until hangup complete */
-				f->links = 1;
-				++tty->use_cnt;
-				/* pass f to timeout function */
-				t->arg = (long)f;
-				(*f->dev->ioctl)(f, TIOCCBRK, 0);
-				/* flag: hanging up */
-				tty->hup_ospeed = -1;
-				/* stop output, flush buffers, drop DTR... */
-				tty_ioctl(f, TIOCSTOP, 0);
-				tty_ioctl(f, TIOCFLUSH, 0);
-				if (ospeed > 0) {
-					tty->hup_ospeed = ospeed;
-					(*f->dev->ioctl)(f, TIOCOBAUD, &z);
-				}
-			}
-			else
-				tty->pgrp = 0;
-		}
-
-		tty->use_cnt--;
-		if (tty->use_cnt <= 0 && tty->xkey)
-		{
-			kfree (tty->xkey);
-			tty->xkey = 0;
-		}
-	}
-#endif // ARAnyM_MetaDOS
 
 	if (f->dev)
 	{

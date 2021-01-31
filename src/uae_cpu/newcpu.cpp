@@ -38,7 +38,7 @@
 #include "main.h"
 #include "emul_op.h"
 #include "m68k.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "readcpu.h"
 #include "newcpu.h"
 #ifdef USE_JIT
@@ -58,6 +58,7 @@
 struct fixup fixup = {0, 0, 0};
 
 int quit_program = 0;
+int exit_val = 0;
 
 // For instruction $7139
 bool cpu_debugging = false;
@@ -81,8 +82,6 @@ int imm8_table[] = { 8,1,2,3,4,5,6,7 };
 int movem_index1[256];
 int movem_index2[256];
 int movem_next[256];
-
-cpuop_func *cpufunctbl[65536];
 
 #ifdef FLIGHT_RECORDER
 
@@ -139,6 +138,7 @@ void dump_flight_recorder(void)
 		fprintf(f, "a0 %08x a1 %08x a2 %08x a3 %08x\n", frlog[j].a[0], frlog[j].a[1], frlog[j].a[2], frlog[j].a[3]);
 		fprintf(f, "a4 %08x a5 %08x a6 %08x a7 %08x\n", frlog[j].a[4], frlog[j].a[5], frlog[j].a[6], frlog[j].a[7]);
 #endif
+		m68k_disasm(f, frlog[j].pc, NULL, 1);
 	}
 	fclose(f);
 }
@@ -198,51 +198,18 @@ int broken_in;
 
 static inline unsigned int cft_map (unsigned int f)
 {
-#if ((!defined(HAVE_GET_WORD_UNSWAPPED)) || (defined(FULLMMU)))
+#if !defined(HAVE_GET_WORD_UNSWAPPED) || defined(FULLMMU)
     return f;
 #else
     return do_byteswap_16(f);
 #endif
 }
 
-void REGPARAM2 op_illg_1 (uae_u32 opcode) REGPARAM;
-
 void REGPARAM2 op_illg_1 (uae_u32 opcode)
 {
     op_illg (cft_map (opcode));
 }
 
-static void build_cpufunctbl (void)
-{
-    int i;
-    unsigned long opcode;
-    int cpu_level = 4;
-    struct cputbl *tbl = op_smalltbl_0_ff;
-
-    for (opcode = 0; opcode < 65536; opcode++)
-	cpufunctbl[cft_map (opcode)] = op_illg_1;
-    for (i = 0; tbl[i].handler != NULL; i++) {
-	if (! tbl[i].specific)
-	    cpufunctbl[cft_map (tbl[i].opcode)] = tbl[i].handler;
-    }
-    for (opcode = 0; opcode < 65536; opcode++) {
-	cpuop_func *f;
-
-	if (table68k[opcode].mnemo == i_ILLG || (unsigned)table68k[opcode].clev > (unsigned)cpu_level)
-	    continue;
-
-	if (table68k[opcode].handler != -1) {
-	    f = cpufunctbl[cft_map (table68k[opcode].handler)];
-	    if (f == op_illg_1)
-		abort();
-	    cpufunctbl[cft_map (opcode)] = f;
-	}
-    }
-    for (i = 0; tbl[i].handler != NULL; i++) {
-	if (tbl[i].specific)
-	    cpufunctbl[cft_map (tbl[i].opcode)] = tbl[i].handler;
-    }
-}
 
 void init_m68k (void)
 {
@@ -257,25 +224,17 @@ void init_m68k (void)
 	movem_index2[i] = 7-j;
 	movem_next[i] = i & (~(1 << j));
     }
-    read_table68k ();
-    do_merges ();
-
-    build_cpufunctbl ();
     fpu_init (CPUType == 4);
 }
 
 void exit_m68k (void)
 {
 	fpu_exit ();
-
-	free(table68k);
-	table68k = NULL;
 }
 
-struct regstruct regs, lastint_regs;
+struct regstruct regs;
 // MJ static struct regstruct regs_backup[16];
 // MJ static int backup_pointer = 0;
-int lastint_no;
 
 
 #ifdef FULLMMU
@@ -442,8 +401,8 @@ void MakeSR (void)
 #endif
     regs.sr = ((regs.t1 << 15) | (regs.t0 << 14)
 	       | (regs.s << 13) | (regs.m << 12) | (regs.intmask << 8)
-	       | (GET_XFLG << 4) | (GET_NFLG << 3) | (GET_ZFLG << 2) | (GET_VFLG << 1)
-	       | GET_CFLG);
+	       | (GET_XFLG() << 4) | (GET_NFLG() << 3) | (GET_ZFLG() << 2) | (GET_VFLG() << 1)
+	       | GET_CFLG());
 }
 
 void MakeFromSR (void)
@@ -554,8 +513,7 @@ void Exception(int nr, uaecptr oldpc)
 #ifdef ENABLE_EPSLIMITER
         check_eps_limit(currpc);
 #endif
-        // panicbug("Exception Nr. %d CPC: %08lx NPC: %08lx SP=%08lx Addr: %08lx", nr, currpc, get_long (regs.vbr + 4*nr), m68k_areg(regs, 7), regs.mmu_fault_addr);
-
+        // panicbug("Exception Nr. %d CPC: %08x NPC: %08x SP=%08x Addr: %08x", nr, currpc, get_long (regs.vbr + 4*nr), m68k_areg(regs, 7), regs.mmu_fault_addr);
 #ifdef EXCEPTIONS_VIA_LONGJMP
 	if (!building_bus_fault_stack_frame)
 #else
@@ -630,8 +588,6 @@ void Exception(int nr, uaecptr oldpc)
 static void Interrupt(int nr)
 {
     assert(nr < 8 && nr >= 0);
-    lastint_regs = regs;
-    lastint_no = nr;
     Exception(nr+24, 0);
 
     regs.intmask = nr;
@@ -642,8 +598,6 @@ static void Interrupt(int nr)
 static void SCCInterrupt(int nr)
 {
     // fprintf(stderr, "CPU: in SCCInterrupt\n");
-    lastint_regs = regs;
-    lastint_no = 5;// ex 5
     Exception(nr, 0);
 
     regs.intmask = 5;// ex 5
@@ -652,8 +606,6 @@ static void SCCInterrupt(int nr)
 static void MFPInterrupt(int nr)
 {
     // fprintf(stderr, "CPU: in MFPInterrupt\n");
-    lastint_regs = regs;
-    lastint_no = 6;
     Exception(nr, 0);
 
     regs.intmask = 6;
@@ -683,8 +635,8 @@ int m68k_move2c (int regno, uae_u32 *regp)
 	 case 0x803: regs.msp = *regp; if (regs.m == 1) m68k_areg(regs, 7) = regs.msp; break;
 	 case 0x804: regs.isp = *regp; if (regs.m == 0) m68k_areg(regs, 7) = regs.isp; break;
 	 case 0x805: mmu_set_mmusr(*regp); break;
-	 case 0x806: regs.urp = *regp & 0xffffff00; break;
-	 case 0x807: regs.srp = *regp & 0xffffff00; break;
+	 case 0x806: regs.urp = *regp & MMU_ROOT_PTR_ADDR_MASK; break;
+	 case 0x807: regs.srp = *regp & MMU_ROOT_PTR_ADDR_MASK; break;
 	 default:
 	    op_illg (0x4E7B);
 	    return 0;
@@ -718,6 +670,7 @@ int m68k_movec2 (int regno, uae_u32 *regp)
     return 1;
 }
 
+#if !defined(uae_s64)
 static inline int
 div_unsigned(uae_u32 src_hi, uae_u32 src_lo, uae_u32 div, uae_u32 *quot, uae_u32 *rem)
 {
@@ -742,6 +695,7 @@ div_unsigned(uae_u32 src_hi, uae_u32 src_lo, uae_u32 div, uae_u32 *quot, uae_u32
 	*rem = src_hi;
 	return 0;
 }
+#endif
 
 void m68k_divl (uae_u32 /*opcode*/, uae_u32 src, uae_u16 extra, uaecptr oldpc)
 {
@@ -864,6 +818,7 @@ void m68k_divl (uae_u32 /*opcode*/, uae_u32 src, uae_u16 extra, uaecptr oldpc)
 #endif
 }
 
+#if !defined(uae_s64)
 static inline void
 mul_unsigned(uae_u32 src1, uae_u32 src2, uae_u32 *dst_hi, uae_u32 *dst_lo)
 {
@@ -882,6 +837,7 @@ mul_unsigned(uae_u32 src1, uae_u32 src2, uae_u32 *dst_hi, uae_u32 *dst_lo)
 	*dst_lo = lo;
 	*dst_hi = r3;
 }
+#endif
 
 void m68k_mull (uae_u32 /*opcode*/, uae_u32 src, uae_u16 extra)
 {
@@ -1063,8 +1019,8 @@ void m68k_emulop(uae_u32 opcode)
 {
 	struct M68kRegisters r;
 	save_regs(r);
-	EmulOp(opcode, &r);
-	restore_regs(r);
+	if (EmulOp(opcode, &r))
+		restore_regs(r);
 }
 
 void m68k_natfeat_id(void)
@@ -1100,8 +1056,15 @@ static int m68k_call(uae_u32 pc)
 	m68k_setpc(pc);
     TRY(prb) {
 #ifdef USE_JIT
-		if (bx_options.jit.jit)
-			m68k_do_compile_execute();
+		if (bx_options.jit.jit) {
+			exec_nostats();
+			//			m68k_do_compile_execute();
+			// The above call to m68k_do_compile_execute fails with BadAccess in sigsegv_handler (MAC, if it is executed after the first compile_block)
+			// (NULL pointer to addr_instr).
+			// Call exec_nostats avoids calling compile_block, because stack modification is only temporary
+			// which will fill up compile cache with BOGUS data.
+			// we can call exec_nostats directly, do our code, and return back here.
+		}
 		else
 #endif
 			m68k_do_execute();
@@ -1134,9 +1097,9 @@ uae_u32 linea68000(volatile uae_u16 opcode)
 	SAVE_EXCEPTION;
 	save_regs(r);
 
-	int sz = 8 + sizeof(void *);
-	uae_u32 sp = 0;
-	uae_u32 backup[4];
+	const int sz = 8 + sizeof(void *);
+	volatile uae_u32 sp = 0;
+	uae_u32 backup[(sz + 3) / 4];
 
 	if (sigsetjmp(jmp, 1) == 0)
 	{
@@ -1341,11 +1304,24 @@ int m68k_do_specialties(void)
 	if (SPCFLAGS_TEST( SPCFLAG_DOTRACE )) {
 		Exception (9,last_trace_ad);
 	}
+#if 0 /* not for ARAnyM; emulating 040 only */
+	if ((regs.spcflags & SPCFLAG_STOP) && regs.s == 0 && currprefs.cpu_model <= 68010) {
+		// 68000/68010 undocumented special case:
+		// if STOP clears S-bit and T was not set:
+		// cause privilege violation exception, PC pointing to following instruction.
+		// If T was set before STOP: STOP works as documented.
+		m68k_unset_stop();
+		Exception(8, 0);
+	}
+#endif
 	while (SPCFLAGS_TEST( SPCFLAG_STOP )) {
 		if ((regs.sr & 0x700) == 0x700)
 		{
-			panicbug("STOPed with interrupts disabled, exiting");
+			panicbug("STOPed with interrupts disabled, exiting; pc=$%08x", m68k_getpc());
+			m68k_dumpstate (stderr, NULL);
+#if 0
 			quit_program = 1;
+#endif
 #ifdef FULL_HISTORY
 			ndebug::showHistory(20, false);
 			m68k_dumpstate (stderr, NULL);
@@ -1412,7 +1388,7 @@ void m68k_do_execute (void)
 #endif
 	opcode = GET_OPCODE;
 #ifdef FLIGHT_RECORDER
-	m68k_record_step(m68k_getpc(), opcode);
+	m68k_record_step(m68k_getpc(), cft_map(opcode));
 #endif
 	(*cpufunctbl[opcode])(opcode);
 	cpu_check_ticks();
@@ -1469,13 +1445,13 @@ setjmpagain:
 
 void m68k_disasm (FILE *f, uaecptr addr, uaecptr *nextpc, int cnt)
 {
-#ifdef HAVE_DISASM
+#ifdef HAVE_DISASM_M68K
 	char buf[256];
 	int size;
 
 	disasm_info.memory_vma = addr;
     while (cnt-- > 0) {
-		size = m68k_disasm_to_buf(&disasm_info, buf);
+		size = m68k_disasm_to_buf(&disasm_info, buf, 1);
     	fprintf(f, "%s\n", buf);
     	if (size < 0)
     		break;
@@ -1493,15 +1469,15 @@ void m68k_disasm (FILE *f, uaecptr addr, uaecptr *nextpc, int cnt)
 #ifdef DEBUGGER
 void newm68k_disasm(FILE *f, uaecptr addr, uaecptr *nextpc, unsigned int cnt)
 {
-#ifdef HAVE_DISASM
+#ifdef HAVE_DISASM_M68K
 	char buf[256];
 
 	disasm_info.memory_vma = addr;
     if (cnt == 0) {
-		m68k_disasm_to_buf(&disasm_info, buf);
+		m68k_disasm_to_buf(&disasm_info, buf, 1);
     } else {
 	    while (cnt-- > 0) {
-		m68k_disasm_to_buf(&disasm_info, buf);
+		m68k_disasm_to_buf(&disasm_info, buf, 1);
     	fprintf(f, "%s\n", buf);
     	}
     }
@@ -1518,11 +1494,11 @@ void newm68k_disasm(FILE *f, uaecptr addr, uaecptr *nextpc, unsigned int cnt)
 
 #ifdef FULL_HISTORY
 void showDisasm(uaecptr addr) {
-#ifdef HAVE_DISASM
+#ifdef HAVE_DISASM_M68K
 	char buf[256];
 
 	disasm_info.memory_vma = addr;
-	m68k_disasm_to_buf(&disasm_info, buf);
+	m68k_disasm_to_buf(&disasm_info, buf, 1);
 	bug("%s", buf);
 #else
 	(void) addr;
@@ -1549,7 +1525,7 @@ void m68k_dumpstate (FILE *out, uaecptr *nextpc)
 	    (unsigned long)regs.msp, (unsigned long)regs.vbr);
     fprintf (out, "T=%d%d S=%d M=%d X=%d N=%d Z=%d V=%d C=%d IMASK=%d TCE=%d TCP=%d\n",
 	    regs.t1, regs.t0, regs.s, regs.m,
-	    (int)GET_XFLG, (int)GET_NFLG, (int)GET_ZFLG, (int)GET_VFLG, (int)GET_CFLG, regs.intmask,
+	    (int)GET_XFLG(), (int)GET_NFLG(), (int)GET_ZFLG(), (int)GET_VFLG(), (int)GET_CFLG(), regs.intmask,
 	    regs.mmu_enabled, regs.mmu_pagesize_8k);
     fprintf (out, "CACR=%08lx CAAR=%08lx  URP=%08lx  SRP=%08lx\n",
             (unsigned long)regs.cacr,

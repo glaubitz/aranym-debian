@@ -33,7 +33,7 @@
 
 #include "sysdeps.h"
 
-#include "memory.h"
+#include "memory-uae.h"
 #include "newcpu.h"
 #include "debug.h"
 
@@ -54,8 +54,6 @@ void activate_debugger (void)
 #ifdef DEBUGGER
 	ndebug::do_skip = false;
 #endif
-	if (debugger_active)
-		return;
 	debugger_active = 1;
 	SPCFLAGS_SET( SPCFLAG_BRK );
 	debugging = 1;

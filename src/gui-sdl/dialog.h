@@ -24,6 +24,7 @@
 #include "SDL_compat.h"
 
 #include "sdlgui.h"
+#include "input.h"
 
 class Dialog;
 
@@ -34,12 +35,14 @@ class Dialog {
 		int return_obj;
 		int last_clicked_obj, last_state;
 		int touch_exit_obj;
+		virtual void handleHotkey(HOTKEY) { }
 
 	public:
 		enum {
 			GUI_CONTINUE,	/* continue displaying dialog */
 			GUI_CLOSE,	/* close current dialog */
-			GUI_REBOOT,	/* reboot aranym */
+			GUI_WARMREBOOT,	/* reboot aranym */
+			GUI_COLDREBOOT,	/* reboot aranym */
 			GUI_SHUTDOWN	/* shutdown aranym */	
 		};
 

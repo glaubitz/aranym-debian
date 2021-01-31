@@ -21,24 +21,43 @@ AC_ARG_WITH(sdl-exec-prefix,[AC_HELP_STRING([--with-sdl-exec-prefix=PFX Exec pre
 AC_ARG_ENABLE(sdltest, [AC_HELP_STRING([--disable-sdltest], [Do not try to compile and run a test SDL program])],
 		    , enable_sdltest=yes)
 
-  if test x$sdl_exec_prefix != x ; then
-    sdl_config_args="$sdl_config_args --exec-prefix=$sdl_exec_prefix"
-    if test x${SDL_CONFIG+set} != xset ; then
-      SDL_CONFIG=$sdl_exec_prefix/bin/sdl-config
-    fi
-  fi
-  if test x$sdl_prefix != x ; then
-    sdl_config_args="$sdl_config_args --prefix=$sdl_prefix"
-    if test x${SDL_CONFIG+set} != xset ; then
-      SDL_CONFIG=$sdl_prefix/bin/sdl-config
-    fi
-  fi
-
   as_save_PATH="$PATH"
   if test "x$prefix" != xNONE; then
     PATH="$prefix/bin:$prefix/usr/bin:$PATH"
   fi
-  AC_PATH_PROG(SDL_CONFIG, sdl-config, no, [$PATH])
+
+#
+# provide some defaults on cygwin,
+# where we use the MinGW version of the SDL library,
+# to simplify standard configuration.
+# But only if the user did not override it.
+#
+case $host in
+  *-*-cygwin*)
+  MINGW_ROOT=$prefix/i686-w64-mingw32/sys-root/mingw
+  if test -d "$MINGW_ROOT"; then
+     if test "$sdl_prefix" = "" ; then
+        sdl_prefix="$MINGW_ROOT"
+        sdl_exec_prefix="$MINGW_ROOT/bin"
+     fi
+  fi
+  ;;
+esac
+
+  if test x$sdl_exec_prefix != x ; then
+    sdl_config_args="$sdl_config_args --exec-prefix=$sdl_exec_prefix"
+    PATH="$sdl_exec_prefix:$PATH"
+  fi
+  if test x$sdl_prefix != x ; then
+    sdl_config_args="$sdl_config_args --prefix=$sdl_prefix"
+    PATH="$sdl_prefix/bin:$PATH"
+  fi
+
+  if test x${SDL_CONFIG+set} != xset ; then
+    AC_PATH_PROG(SDL_CONFIG, sdl-config, no, [$PATH])
+  else
+    test -f "$SDL_CONFIG" || SDL_CONFIG=no
+  fi
   PATH="$as_save_PATH"
   min_sdl_version=ifelse([$1], ,0.11.0,$1)
   AC_MSG_CHECKING(for SDL - version >= $min_sdl_version)
@@ -52,16 +71,19 @@ AC_ARG_ENABLE(sdltest, [AC_HELP_STRING([--disable-sdltest], [Do not try to compi
 case $host in
   *-*-cygwin*)
   # switches that must be removed for the mixed cygwin/MinGW32 platform
+  # also replaces -L... -lSDL by the absolute pathname of the library,
+  # because the -L points to mingw libraries instead of cygwin libraries
   nosdlswitch='s/-Dmain=SDL_main//;
-s=-I/usr.*/SDL='-I${includedir}/SDL'=;
-s=-I/mingw.*/SDL='-I${includedir}/SDL'=;
+s=-I/usr/include.*/SDL='-I${includedir}/SDL'=;
+s=-I/mingw/include.*/SDL='-I${includedir}/SDL'=;
 s/-DWIN32//;
 s/-Uunix//;
 s/-mno-cygwin//;
 s/-lmingw32//;
 s/-lSDLmain//;
 s/-mwindows//;
-s/-mms-bitfields//
+s/-mms-bitfields//;
+s=-L\([[^ ]]*\).*-l\(SDL[[^ ]]*\)=\1/lib\2.dll.a=;
 '
 	SDL_CFLAGS=`echo $SDL_CFLAGS | sed -e "$nosdlswitch"`
 	SDL_LIBS=`echo $SDL_LIBS | sed -e "$nosdlswitch"`
@@ -70,8 +92,8 @@ s/-mms-bitfields//
   *-*-mingw*)
   # switches that must be removed because we dont link SDLmain
   nosdlswitch='s/-Dmain=SDL_main//;
-s=-I/usr.*/SDL='-I${includedir}/SDL'=;
-s=-I/mingw.*/SDL='-I${includedir}/SDL'=;
+s=-I/usr/include.*/SDL='-I${includedir}/SDL'=;
+s=-I/mingw/include.*/SDL='-I${includedir}/SDL'=;
 s/-DWIN32//;
 s/-Uunix//;
 s/-lmingw32//;

@@ -1,3 +1,1881 @@
+2019/04/10
+Fix FNEG to handle negative/positive zero
+
+
+2019/04/10
+Long double INFs on x86 must have the explicit integer bit set,
+or they are treated as NaNs
+
+
+2019/03/17
+Add safety check to not overflow the linux command line
+
+
+2019/03/17
+Add some safety check to linux loader, and fix DEBUG output
+
+
+2019/03/09
+Implement NF_EXIT feature
+
+
+2019/03/09
+Add armhf automated builds
+
+Contributed by sagudev <samo@erazer.Home>
+
+
+2019/01/03
+Fix definition of GLintptr when using Apple legacy headers
+
+
+2019/01/03
+Fix definition of GLintptrARB when using Apple legacy headers
+
+
+2019/01/03
+Fix definition of GLhandleARB when using Apple legacy headers
+
+
+2019/01/03
+Avoid redefinition of GL_GLEXT_VERSION from newer versions of glext.h
+
+
+2018/12/19
+The buffer for MX_KER_XFSNAME is only 8 chars, do not overwrite it
+
+
+2018/12/18
+Do not D(Bug()) nf_calls to NF_STDERR, they interfere
+with the actual output from the application
+
+
+2018/11/27
+Remove some unused variables
+
+
+2018/11/27
+In the flight recorder, record the 68k opcode, not
+the unswapped little-endian opcode
+
+
+2018/11/26
+Fix some typos in comments
+
+
+2018/10/02
+Run travis builds for macOS now with -quiet, since they changed
+the settings and builds are aborted when log file gets too long
+
+
+2018/10/02
+Avoid a warning about using non-static data member initializers
+
+
+2018/10/02
+Fix a build error when long double is not available
+
+
+2018/09/21
+Reorganize tos patches for 4.04
+
+
+2018/09/19
+TOS 4.x sometimes selects both floppy drives
+
+
+2018/09/12
+Add a hotkey for turning audio on/off
+
+
+2018/09/09
+dsp_core.c: Replace algorithm to generate ROM tables
+by pre-generated tables (the a-law table was not exactly
+that found on real devices)
+
+
+2018/09/09
+dsp_disasm.c: fix a bug in disassembling movec #imm
+
+
+2018/09/05
+dsp_core.c: some parameters are always unused, independent
+of DEBUG
+
+
+2018/09/04
+Avoid some buffer overflows in DSP disassembler
+
+
+2018/09/02
+Fix build failures on win32
+
+
+2018/09/02
+Fix some more bugs in the jpeg driver when output is to file,
+and image width is not multiple of 16
+
+
+2018/09/01
+Fix a long-standing in the IDE driver when byteswap is enabled,
+and the data register is accessed using long words
+
+
+2018/09/01
+Fix some build problems in the shared libs for osmesa
+
+
+2018/09/01
+Fix several bugs in NFJPEG driver
+
+- when output is to a file, and no user callbacks are used,
+  create a proper TGA file header
+- error return codes should be the ones from jpgdh.h, not TOS
+  error codes
+- decoding loop was not aborted on request from user callback
+- user callbacks were called without declaring a clobber list,
+  resulting in trashed registers and possible endless loops
+- OutTmpHeight should reflect the number of just decoded rows,
+  not remaining until end-of-image
+- MCUsCounter must be updated before calling any user callbacks
+
+
+2018/08/31 - Thorsten
+Fix lookup of hotkeys that were disabled
+
+
+2018/08/31 - Thorsten
+Do not send key releases of hotkeys to Atari
+
+
+2018/08/31 - Thorsten
+nfjpeg: don't wait for keypress
+
+The message(s) written by Cconws() might not be visible on the screen,
+when written to boot.log by MiNT or redirected to the host console.
+In that case the user has no idea that the driver is waiting for a keypress,
+and the boot will stop.
+
+
+2018/08/31 - Thorsten
+Reformat ata.cpp
+
+
+2018/08/31 - Thorsten
+Don't flood console with messages from IDE driver that
+are actually debug messages
+
+
+2018/07/16 - Thorsten
+Avoid using a restricted pointer
+
+
+2018/07/16 - Thorsten
+Fix some corner-cases of INF handling
+
+
+2018/06/03 - Thorsten
+According to Toni Wilen, the '040 does not mask out bits 0-3
+of the FPCR register
+
+
+2018/06/01 - Thorsten
+Mask off least significant 3 bits of accrued exception byte
+
+
+2018/06/01 - Thorsten
+Handle signbit of NaNs
+
+
+2018/05/31 - Thorsten
+JIT: add some comments
+
+
+2018/05/31 - Thorsten
+JIT: properly declare FPU constants as long double,
+as they otherwise might be compiled inexactly
+
+
+2018/05/29 - Thorsten
+JIT: Fix some more flag handling in rotate instructions
+
+
+2018/05/26 - Thorsten
+Rework disassemblers to print excessive instruction
+bytes on multiples lines
+
+
+2018/05/25 - Thorsten
+Avoid some warnings from shifts in codegen_arm.h
+
+
+2018/05/24 - Thorsten
+Fix some corner-cases of flags handling in JIT compiled rotate instructions,
+when shift count is zero or greater than the operand size
+
+
+2018/05/22 - Thorsten
+Fix some debug messages
+
+
+2018/05/22 - Thorsten
+Update macOS project files
+
+
+2018/05/22 - Thorsten
+Implement EmulOp to query/set JIT state
+
+
+2018/05/22 - Thorsten
+Assume that nf_id/nf_call/EmulOp pseudo instructions need all flags
+
+
+2018/05/21 - Thorsten
+Fix a bug in JIT compiled code for addx/subx that
+did not set the V flag correctly
+
+
+2018/05/20 - Thorsten
+Add builtin disassembler support for x86
+
+
+2018/04/18 - Thorsten
+Move initialization of table68k to compiler sources
+
+
+2018/04/17 - Thorsten
+Simplify readcpu a bit
+
+
+2018/04/17 - Thorsten
+Add some missing declarations for arm
+
+
+2018/04/16 - Thorsten
+Remove long obsolete tests for 33bit adressing from configure
+
+
+2018/04/16 - Thorsten
+JIT: sync with current WinUAE sources
+
+
+2018/04/15 - Thorsten
+Remove some unused variables
+
+
+2018/04/15 - Thorsten
+Small fix to gencomp{_arm}.cpp to protect a generated local variable
+with braces
+
+
+2018/04/14 - Thorsten
+Remove an unused type
+
+
+2018/04/13 - Thorsten
+Setting the text segment to a fixed address broke
+the memory probing; make it more robust by skipping
+ranges of already existing mappings
+
+
+2018/04/13 - Thorsten
+Fix some typos, and some bogus tests in configure.ac
+
+
+2018/04/10 - Thorsten
+Reape child processes started by hostexec feature
+
+
+2018/04/06 - Thorsten
+Update glibc wrapper to include new symbols from glibc 2.27
+
+
+2018/04/06 - Thorsten
+Workaround for building with XCode 3.2.6
+
+Reported by Francois LE COAT; although already present in
+sdl_opengl_wrapper.h, that sequence seems to fix some build problems
+
+
+2018/03/18 - Thorsten
+Implement HOSTEXEC for MinGW
+
+
+2018/03/18 - Thorsten
+Avoid some warnings
+
+
+2018/03/18 - Thorsten
+Use another name for remove(), as it might conflict
+with c++11 <list> header
+
+
+2018/03/18 - Thorsten
+Avoid some conflicts with windows headers
+
+
+2018/03/18 - Thorsten
+Extend HOSTEXEC native feature with execv() method
+
+
+2018/03/17 - Thorsten
+Add HOSTEXEC native feature.
+Proposed by Miro Kropáček <miro.kropacek@gmail.com>
+
+
+2018/03/15 - Thorsten
+Move some definitions from version.h to main_unix.cpp,
+in order to reduce the number of files that depend on
+version.h/version_date.h
+
+
+2018/03/15 - Thorsten
+Delete CVS's keywords like $Id$ from a bunch of files.
+This keywords are unused since the migration to Git, 4 years ago.
+
+
+2018/03/15 - Thorsten
+hostfs: Now that mint implements the file locking, implement maintaining
+the list of file locks.
+
+
+2018/02/27 - Andreas
+- sigsegv_linux_arm.cpp: Use ucontext_t instead of struct ucontext
+
+
+2018/02/24 - Thorsten
+Add a link to repology.org in README
+
+
+2018/02/24 - Thorsten
+Experimental support for JIT on Haiku; disabled for now as it panics the kernel
+
+
+2018/02/23 - Thorsten
+Small fixes for compilation on Haiku
+
+
+2018/02/23 - Thorsten
+Check for existence of futimes(); android and BeOS
+don't have it
+
+
+2018/02/23 - Thorsten
+Workaround for some broken installations of SDL
+which define the PACKAGE_ macros in SDL_config.h
+
+
+2018/02/23 - Thorsten
+Replace config.{sub,guess} by newer versions
+
+
+2018/02/23 - Thorsten
+Add SDL2 versions to the macOS project.
+
+
+2018/02/21 - Thorsten
+Protect futimens() calls by runtime checks on macOS
+
+
+2018/02/21 - Thorsten
+Update macOS project files for XCode 9.2
+
+
+2018/02/21 - Thorsten
+Check for X11 headers being available on macOS; SDL_syswm.h
+needs them.
+
+
+2018/02/18 - Thorsten
+Some NSAlert constants have been renamed in macOS 10.12
+
+
+2018/02/18 - Thorsten
+Fix some versioned symbol definitions in libcwrap.h for i586 and
+aarch64 systems.
+Reported by Christian Quante <chrischaan66@googlemail.com>
+
+
+2018/02/09 - Thorsten
+Recreate SDL resource files using updated ORCS version
+
+
+2018/02/09 - Thorsten
+nfosmesa: update to OpenGL 4.6, adding 119 functions
+
+
+2018/02/08 - Thorsten
+Update links in documentation files to point to new wiki location
+
+
+2018/02/08 - Thorsten
+Update fntconv utility
+
+
+2018/02/06 - Thorsten
+Some MinGW dlls could be missed when creating the archives,
+both for snapshot builds and releases.
+
+
+2018/02/05 - Thorsten
+Use smaller font for "X" in hostfs dialog
+
+
+2018/02/04 - Thorsten
+Reformat README.md
+
+
+2018/02/04 - Thorsten
+Add scripts for automated cygwin builds via AppVeyor
+
+
+2018/02/03 - Thorsten
+Fix handling of pathnames with spaces in the cygwin build script.
+
+
+2018/02/03 - Thorsten
+Add a "Build status" indicator to the README
+
+
+2018/02/03 - Thorsten
+Copy back the input fields in the hostfs dialog before scrolling,
+in case they have been edited
+
+
+2018/02/03 - Christian
+Add some clear buttons to several setting dialogs.
+In the setting dialogs it was not possible to remove selected
+entries such as floppy disk images and TOS images.
+
+
+2018/02/03 - Thorsten
+Remove CRs
+
+
+2018/02/01 - Thorsten
+Add some more characters to the font, and reorder it
+to use unicode indices. Also add the sources needed to rebuild it.
+
+
+2018/01/30 - Thorsten
+Add a lot of international characters to the builtin font.
+Needed to correctly display filenames in the selector.
+(our own dialog texts are ascii only, but that can now be changed, too)
+
+
+2018/01/27 - Thorsten
+Fix duplicate assignment introduced in commit #d32c06a5aa4c3ce7c9b77482ac31e14d5a7eb190
+
+
+2018/01/27 - Thorsten
+Fix display of non-ASCII characters in the SDL GUI
+(mainly affected the file selector dialog).
+
+
+2018/01/27 - Thorsten
+Reconstruct the font used for the SDL GUI as regular GEM font.
+
+
+2018/01/27 - Thorsten
+Fix compilation problems with newer versions of opcodes library
+
+
+2018/01/27 - Thorsten
+Fix a potential crash when --enable-debug was defined
+(va_list argument was reused)
+
+
+2018/01/27 - Thorsten
+Simplify building on cygwin, by adding the necessary
+flags to use the MinGW SDL library. Makes the build-cygwin.sh
+script obsolete. Also update documentation.
+
+
+2018/01/26 - Thorsten
+Add *.exe to .gitignore, for the sake of cygwin
+
+
+2018/01/24 - Thorsten
+Avoid redefinition of WIN32_LEAN_AND_MEAN with recent SDL versions
+on mingw/cygwin
+
+
+2018/01/09 - Thorsten
+Fix NBCD instruction
+
+
+The V flag was cleared when it shouldn't in some cases. Verified on all
+possible combinations.
+
+
+2018/01/09 - Thorsten
+Keep the V flag on the 68030
+
+
+2017/12/27 - Thorsten
+Fix compilation error on MacOS
+
+
+2017/11/20 - Thorsten
+Make combination of --enable-jit-compiler --enable-fullmmu an error,
+since it is not supported
+
+
+2017/11/06 - Thorsten
+Use drive letters '1'..'6' for letters beyond 'Z' to be consistent with
+MiNT's unifs, and also Teradesk/Thing
+
+
+2017/11/06 - Thorsten
+Fix rare possible wrong order in 'MOVEP M->R' depending on the compiler' optimisations (patch by Toni Wilen)
+
+
+2017/11/06 - Thorsten
+Fix a rare case on 68000 where STOP triggers a privilege exception and stack PC+4 if new SR has bit S=0
+For example 'STOP #$555' will trigger a privilege violation exception on 68000 CPU
+and stacked PC will point after the STOP instruction.
+The behaviour is different on 68000, 68020/030 and 68040/060 (more generic patch by Toni Wilen)
+Although this is not documented anymore in recent Motorola's doc, it seems it was described
+in very early 68000 documentations
+
+
+2017/11/06 - Thorsten
+Implement Ffchmod for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Ffchown for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Fcntl for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+hostfs: Work around a bug with mints calculation
+of utc times from file timestamps
+
+
+2017/11/06 - Thorsten
+Implement Fstat64/Ffstat64 for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Fchmod for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Fchown/Fchown16 for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Freadlink for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Fsymlink for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Implement Flink for MetaDOS driver.
+
+
+2017/11/06 - Thorsten
+Remove dead code from MetaDOS driver.
+
+
+2017/11/04 - Thorsten
+Copy necessary files back from FreeMiNT to metados folder,
+to make it possible to build it locally
+
+
+2017/11/04 - Thorsten
+Workaround for generator programs on cygwin sometimes
+getting an unresolved symbol reference to cygwin_mingw_abort()
+
+
+2017/11/03 - Thorsten
+Update MetaDOS driver with current Freemint sources,
+and make it compilable again.
+
+
+2017/11/03 - Thorsten
+Simplify debug output
+
+
+2017/10/31 - Thorsten
+Fix start of text segment for JIT on ArchLinux
+
+
+2017/09/17 - Thorsten
+Add disassembler support for arm
+
+
+2017/09/16 - Thorsten
+Fix bug introduced in commit b839b37f causing the bpf_helper executable not
+to be found
+
+
+2017/09/16 - Thorsten
+Use NO_NESTED_SIGSEGV on linux/arm, to cleanly return from signal handler
+
+
+2017/09/13 - Thorsten
+Update glibc wrapper for arm
+
+
+2017/09/13 - Thorsten
+Some code formatting cleanup
+
+
+2017/09/10 - Thorsten
+Don't use glibc wrapper for Android
+
+
+2017/09/10 - Thorsten
+Don't rely on current directory being writable when creating
+temporary config file
+
+
+2017/09/10 - Thorsten
+Fix parameters.h to not declare functions with default values,
+as it is also included in objective-c code on macOS
+
+
+2017/09/10 - Thorsten
+Allow NumLock & ScrollLock in the hotkeys dialog
+
+
+2017/09/10 - Thorsten
+Make directory for screenshots configurable
+
+
+2017/09/09 - Thorsten
+Handle hotkeys in the main SDL gui dialog.
+
+This might help in situations where the app is accidently run on the
+console, the dialog pops up, and no mouse is available.
+
+
+2017/09/09 - Thorsten
+Automagically purge old snapshots
+
+
+2017/09/08 - Thorsten
+Add some missing variable exports to scripts
+
+
+2017/09/08 - Thorsten
+Avoid an undefined reference when compiling against
+older glibc ABI, and using _FORTIFY_SOURCE
+
+
+2017/09/08 - Thorsten
+Add scripts for AppImage creation
+
+
+2017/09/06 - Thorsten
+Move installation of *.desktop and icons to Makefile
+
+
+2017/09/06 - Thorsten
+deploy: silence curl
+
+
+2017/09/05 - Thorsten
+Remove some obsolete items from the TODO list
+
+
+2017/09/04 - Thorsten
+Update a link in README.rtf
+
+
+2017/09/04 - Thorsten
+Use libcwrap.h to link against older glibc abi on linux
+
+
+2017/09/03 - Thorsten
+Prevent "Invalid argument" when attaching the bpf interface
+
+
+2017/09/03 - Thorsten
+Fix typo in last commit
+
+
+2017/09/03 - Thorsten
+Preserve options in the type of the ethernet interface
+
+The "bridge" mode for MacOSX has some options for the filter
+to be applied (nofilter, ip, or mcast). Preserve those when
+using the GUI dialog.
+(currently a workaround only, those options should be
+configurable there, too)
+
+2017/09/03 - Thorsten
+Make example arabridge script a bit more robust
+when parsing ifconfig output
+
+
+2017/09/02 - Thorsten
+Another fix for mouse grabbing. sigh.
+
+
+2017/09/02 - Thorsten
+Some minor cleanups in aratapif
+
+
+2017/09/02 - Thorsten
+Consistently ignore unconfigured ethernet interfaces
+
+
+2017/09/01 - Thorsten
+Fix file descriptor leaks in ethernet handlers
+
+
+2017/08/31 - Thorsten
+Make GrabMouse = Yes work again on macOS
+
+
+2017/08/31 - Thorsten
+Make GrabMouse = Yes work again on macOS
+
+
+2017/08/31 - Thorsten
+Fix invocation of bpf_helper on macOS.
+
+There where several situations where that helper tool would be executed
+in an endless loop, or the accept() call in the main app hangs
+because the tool already died and never sent a message.
+
+
+2017/08/30 - Thorsten
+Remove libsdl2-dev and libsdl2-image-dev from list of packages to be installed
+for travis builds, as it current leads to errors
+
+
+2017/08/30 - Thorsten
+Make GrabMouse = Yes work again
+
+
+2017/08/29 - Thorsten
+macOS: make sure mpfr, gmp and jpeg can be found during configure
+when run from xcode in a clean build environment
+
+
+2017/08/26 - Thorsten
+Add new source to MacOSX project
+
+
+2017/08/26 - Thorsten
+osmesa: avoid hiding overloaded virtual functions
+
+
+2017/08/26 - Thorsten
+osmesa: avoid variable length array of constructors
+(not supported by older versions of clang)
+
+
+2017/08/26 - Thorsten
+Check return values of vasprintf
+
+
+2017/08/26 - Thorsten
+Fixes for "make distcheck"
+
+For some strange reason, make distcheck did a "make distclean" in
+the src/uae_cpu directory, removing the compiler/.deps directory,
+then a "make distclean" in the src directory, where it tries to
+include the deps files from the compiler directory, which fails.
+
+
+2017/08/21 - Thorsten
+Rename copied SDL function to avoid linking errors
+
+
+2017/08/21 - Thorsten
+Workaround a wrong patch for some distributions of SDL
+that had the effect of continously changing the window size.
+
+The original problem was reported here:
+References: http://bugzilla.libsdl.org/show_bug.cgi?id=1430
+References: http://bugs.debian.org/665779
+References: http://bugs.gentoo.org/411539
+References: http://bugzilla.novell.com/855639
+
+On SuSE at least, the shipped SDL has a patch applied that not
+only reverted that patch, but completely removed the behaviour.
+This had the effect that (when using the OpenGL VDI driver),
+the resize event from the first window creation was read by application
+even if the window has been resized to a different size in the
+meantime.
+
+
+2017/08/21 - Thorsten
+Improve mouse for android a bit
+
+
+2017/08/21 - Thorsten
+Update emutos img in package for android to current version
+
+
+2017/08/21 - Thorsten
+Mac OS X 10.9 no longer uses the -psn_XXX command line arg for Finder launches.
+
+
+2017/08/20 - Thorsten
+Update sample config file
+
+
+2017/08/20 - Thorsten
+Remove explicit -march=armv6 from CFLAGS as it breaks building for android
+
+
+2017/08/20 - Thorsten
+Some fixes for cross-compilation environments
+
+
+2017/08/20 - Thorsten
+Protect nfcdrom_linux from being compiled if NFCDORM_LINUX_SUPPORT
+is not defined (as is the case for android)
+
+
+2017/08/20 - Thorsten
+Remove bogus ASM_SYM_FOR_FUNC define
+
+
+2017/08/20 - Thorsten
+Fix compilation for --disable-opengl
+
+
+2017/08/20 - Thorsten
+Add some comments to android build instructions
+
+
+2017/08/16 - Thorsten
+Hide the unused Window tabbing entries from macOS Sierra menues
+
+
+2017/08/16 - Thorsten
+Avoid a warning/compile error in generated aranym_version.c
+
+
+2017/08/15 - Thorsten
+Update Xcode project files & scripts to make use of jpeglib like the others
+
+
+2017/08/15 - Thorsten
+Move the commands that fix the runtime library path from the xcode project file
+into a separate script
+
+
+2017/08/15 - Thorsten
+Make sure target libraries like -lmpfr are not used for the build tools
+
+
+2017/08/15 - Thorsten
+Some small changes to MacOSX project files done by newer versions of Xcode
+
+
+2017/08/14 - Thorsten
+Create compiler directory if it does not exist
+(needed by out-of-source-tree builds like done by the
+MacOSX scripts)
+
+
+2017/07/27 - Thorsten
+Fix some build problems on recent versions of cygwin
+
+
+2017/07/27 - Thorsten
+Fix a extern inline declaration to avoid link errors
+(only affected MinGW)
+
+
+2017/07/27 - Thorsten
+Avoid a warning
+
+
+2017/07/26 - Thorsten
+Do not fail if pkg-config does not find "gl" package; not all
+systems provide one
+
+
+2017/07/26 - Thorsten
+Fix some file permissions
+
+
+2017/07/23 - Thorsten
+Avoid some warnings
+
+
+2017/07/22 - Thorsten
+Enable JIT on Solaris x86_64 hosts
+
+
+2017/07/22 - Thorsten
+sysdeps.h: Remove the OS_solaris part and simply include the headers found by
+configure script.
+
+
+2017/07/22 - Thorsten
+Fix some sources to include config.h before any
+system header files (needed for defines like
+_POSIX_SOURCE and _FILE_OFFSET_BITS)
+
+
+2017/07/21 - Thorsten
+Protect including jpeglib.h by #ifdef __cplusplus;
+some old jpeg-6b headers don't do it on their own
+
+
+2017/07/21 - Thorsten
+Remove autoconf test for wchar_t; it wasn't working
+and not needed
+
+
+2017/07/21 - Thorsten
+Fix building on FreeBSD
+
+
+2017/07/20 - Thorsten
+Fix building on OpenBSD
+Reported by George Koehler
+
+
+2017/07/17 - Thorsten
+Use boolean, not jboolean for older jpeg libraries.
+
+
+2017/07/17 - Thorsten
+For now, make sure memory configuration isn't changed when
+loading a config file from the GUI; it does not work yet.
+
+
+2017/07/17 - Thorsten
+Prefer jpeglib over SDL_image; this is the only format needed,
+making SDL_image obsolete
+
+
+2017/07/16 - Thorsten
+Fix a few debug printf format strings
+
+
+2017/07/04 - Thorsten
+Disable using the SDL2 sample rate conversion again, it
+did not work
+
+
+2017/07/03 - Thorsten
+Increase low starting address for memory probing, using a too low
+value sometimes yields an uncatchable SIGSEGV
+
+
+2017/07/03 - Thorsten
+Do not install SIGINT handler when only probing for available memory ranges
+
+
+2017/07/03 - Thorsten
+Fix audio output for SDL2
+
+
+2017/07/03 - Thorsten
+Remove forgotten debug output
+
+
+2017/06/28 - Thorsten
+Display an alert in the sdl-gui when no TOS image could be found.
+
+
+2017/06/28 - Thorsten
+gitignore .directory files created by some filemanagers
+
+
+2017/06/28 - Thorsten
+Make the TOS- and EmuTOS-path selectable in the GUI.
+
+
+2017/06/27 - Thorsten
+Change default emutos image filename to emutos-aranym.img.
+
+
+2017/06/25 - Thorsten
+Sort some keys in dyngl.pl to avoid randomness in generated output
+
+
+2017/06/25 - Thorsten
+Convert logo.png to bmp, and use builtin function from SDL
+to load it, avoiding an unneccesary dependency on SDL_image
+
+
+2017/06/25 - Thorsten
+SDL_DisplayFormat() is no longer available in SDL2
+
+
+2017/06/25 - Thorsten
+Define the EXT2 ioctl constants if <ext2fs/ext2_fs.h> is not available
+to avoid an unnecessary dependency on e2fsprogs package
+
+
+2017/06/20 - Thorsten
+ata.cpp: fix some cases where two or more
+errors where issued when using unsupported addresses;
+also suppress some irritating messages caused by
+drivers that might try to auto-detect twisted cables,
+like EmuTOS since version 0.9.8
+
+
+2017/06/20 - Thorsten
+Set the window manager icon after initializing the video mode
+also for SDL 1.x, otherwise it might be loaded in the wrong
+format and cause badmatch errors.
+
+
+2017/06/20 - Thorsten
+Use HAVE_VASPRINTF instead of HAVE_GNU_SOURCE
+
+
+2017/06/20 - Thorsten
+Comment out some unused functions
+
+
+2017/06/20 - Thorsten
+Comment out unused usart field
+
+
+2017/06/20 - Thorsten
+Get rid of some annoying warnings generated by gcc 6.x+
+
+
+2017/06/20 - Thorsten
+Fix a wrong signed comparison in usbhost.cpp
+
+
+2017/06/20 - Thorsten
+Fix handling of throw() with newer compilers
+
+C++11 deprecates dynamic exception specifications, and
+newer compiler versions generate lots of warnings about them
+
+
+2017/06/20 - Thorsten
+Add missing NEWS entry from last release
+
+
+2017/06/12 - Thorsten
+replace verify.h with slightly different version that was released
+under LGPL v2
+
+
+2017/06/07 - Thorsten
+blitter.cpp: reformat the op table to make it more readable
+
+
+2017/06/07 - Thorsten
+blitter.cpp: handle word read/writes of blitter src/dst address
+
+
+2017/06/07 - Thorsten
+blitter.cpp: do not read the source at all for operations that
+don't need it, and don't check the source address in these cases;
+the bios does not initalize it
+
+
+2017/06/01 - Thorsten
+Remove some unused declarations
+contributed by Miro Kropacek
+
+
+2017/06/01 - Thorsten
+add some comments
+
+
+2017/06/01 - Thorsten
+ldd: avoid some warnings on Win32
+
+
+2017/04/18 - Thorsten
+xhdi: return error if fseek fails
+
+
+2017/02/11 - Thorsten
+nfosmesa: fix prototype of glClearNamedFramebufferfi
+
+
+2017/01/11 - Thorsten
+JIT: sync gencomp*.c with current WinUAE sources
+
+
+2017/01/11 - Thorsten
+JIT: sync compemu_midfunc_x86.[cpp|h] with current WinUAE sources
+
+
+2017/01/10 - Thorsten
+JIT: fix regression in definition of status flags
+
+
+2017/01/10 - Thorsten
+JIT: more sync with current WinUAE sources
+
+
+2017/01/10 - Thorsten
+JIT: workaround for cases where a buserror was catched by the
+68k code and jumps back into the middle of a compiled block
+
+
+2017/01/09 - Thorsten
+JIT: sync with current WinUAE sources
+
+
+2017/01/08 - Thorsten
+Fix some file permissions; move verify.h to include directory
+
+
+2017/01/06 - Thorsten
+add disassembler support to JIT (with JIT_DEBUG)
+
+
+2017/01/06 - Thorsten
+Detect accesses to HOST NULL ptrs at least in custom segfault handlers,
+and terminate Aranym because that indicates a bug in Aranym rather
+than the emulated program.
+
+
+2017/01/06 - Thorsten
+Change some debug output to match other output done earlier
+
+
+2016/12/12 - Thorsten
+Update EmuTOS loader for upcoming version
+
+
+2016/12/12 - Thorsten
+Fix typo in phys_put_quad()
+
+
+2016/12/12 - Thorsten
+rtc.h: add define for Mexico, found in TOS sources
+
+
+2016/12/12 - Thorsten
+Update sigsegv handler for x86 to handle some more immediate
+data addressing modes
+
+
+2016/09/14 - Thorsten
+configure.ac: Fix non-linux build
+Patch from François Revol
+
+
+2016/03/21 - Andreas
+- ncr5380.cpp: emulate MODE register (from Finn Thain <fthain@telegraphics.com.au>)
+
+
+2016/03/02 - Thorsten
+nf_scsidrv.cpp: some fixes to media change detection
+(suggested by Uwe Seimet)
+
+
+2016/01/15 - Thorsten
+Mark texts in sdlgui.sdl as translatable
+
+
+2015/11/24 - Thorsten
+Fix compilation of standalone disassembler
+
+
+2015/10/24 - Andreas
+- src/Makefile.am: remove target file before copying over it
+
+
+2015/10/18 - Thorsten
+nf_scsidrv.cpp: experimental udev-based media change detection
+(needs stub program >= V0.82)
+
+
+2015/10/11 - Thorsten
+nf_scsidrv.cpp: some interface changes as suggested by Uwe Seimet
+(needs stub program >= V0.81)
+
+
+2015/10/04 - Thorsten
+nf_scsidrv.cpp: some interface changes as suggested by Uwe Seimet
+(needs updated stub program)
+
+
+2015/09/19 - Thorsten
+autogen.sh: automake must run after autoheader in freshly cloned 
+directories
+
+
+2015/09/19 - Thorsten
+nf_scsidrv.cpp: handle the case of NULL pointer for sense_buffer
+
+
+2015/09/17 - Thorsten
+rtc.cpp: freeze reported time while Bit 7 in Register 11 is SET,
+and handle BIN/BCD and 12hr/24hr bits
+
+
+2015/09/14 - Thorsten
+Implement NF_SCSIDRV Native Feature
+(generic linux sg interface, contributed by Uwe Seimet)
+
+
+2015/09/12 - Thorsten
+Fixed buffersize calculation for buffers passed to SDL_ConvertAudio()
+
+
+2015/09/05 - Thorsten
+nfvdi_soft.{cpp|h}: Fixes and some optimizations for drawing
+diagonal lines
+
+
+2015/08/31 - Thorsten
+mathlib.h: remove useless assignment in make_nan()
+
+
+2015/08/22 - Andreas
+- fpu_mpfr.cpp: properly track sign bit of NaN
+
+
+2015/08/10 - Thorsten
+nfosmesa: try to use renderbuffers when Mesa library is not available.
+This should finally make that feature available on MacOSX/Cygwin/MingW
+
+
+2015/07/17 - Thorsten
+nfosmesa: make it possible to semi-automatically generate most of
+the conversion code (needs descriptions of the parameters in the
+generator script)
+Deactivate DEBUG code accidentally left activated in last commit
+
+
+2015/07/15 - Thorsten
+nfosmesa: support OSMesaGetProcAddress(); return a function pointer that can
+actually be called on the client side
+
+
+2015/07/14 - Thorsten
+nfosmesa: For FULLMMU, copy all input parameters to stack using Readxxx()
+before calling external functions; similar for output values.
+Can also be activated for normal operation, for proper BUSERROR
+reporting in case of faulty addresses.
+
+
+2015/07/08 - Thorsten
+OSMesaCreateLDG(atari side): round buffersize up to word boundaries,
+so that the framebuffer can be used for vro_cpyfm()
+
+
+2015/07/07 - Thorsten
+osmesa(Atari side): Rework the way parameters are passed to shared
+libs, making them thread-safe and saving ~90k of code. Also creates
+an osmesa.slb now, reusing the NFAPI enums as function numbers.
+
+
+2015/07/02 - Thorsten
+nfosmesa: update to OpenGL 4.5, adding 172 functions
+
+
+2015/07/02 - Thorsten
+allow opengl libraries to be a colon separated list of names
+
+
+2015/07/01 - Thorsten
+nfosmesa: a few fixes, and grouping of functions according to GL extension
+
+
+2015/06/29 - Thorsten
+nfosmesa: Add remaining conversion macros for several functions
+OpenGL 4.4 complete now; needs testing
+
+
+2015/06/27 - Thorsten
+nfosmesa: Add conversion macros for several functions
+87 more to go
+
+
+2015/06/26 - Thorsten
+nfosmesa: Add conversion macros for several functions
+220 more to go
+
+
+2015/06/25 - Thorsten
+nfosmesa: Add conversion macros for several functions
+362 more to go
+
+
+2015/06/24 - Thorsten
+nfosmesa: Add conversion macros for several functions
+496 more to go
+
+
+2015/06/21 - Thorsten
+nfosmesa: handle functions that return a 64-bit type
+
+
+2015/06/19 - Thorsten
+nfosmesa: Add conversion macros for several functions
+694 more to go
+
+
+2015/06/19 - Thorsten
+nfosmesa: support exception_error callback (tiny_gl.ldg only)
+Update documentation
+
+
+2015/06/19 - Thorsten
+nfosmesa: Fix ldg interface for stupid programs that
+call GL functions without creating a context first
+
+
+2015/06/19 - Thorsten
+nfosmesa: Add conversion macros for several functions
+722 more to go
+
+
+2015/06/17 - Thorsten
+nfosmesa: Add conversion macros for several functions
+805 more to go
+
+
+2015/06/17 - Thorsten
+nfosmesa: fix some export names
+
+
+2015/06/17 - Thorsten
+nfosmesa: fix wrong parameter in glGetStringi
+
+
+2015/06/17 - Thorsten
+nfosmesa: cosmetic: fix prototype descriptions compiled into *.ldg
+
+
+2015/06/17 - Thorsten
+nfosmesa: fix a few prototypes
+
+
+2015/06/14 - Thorsten
+Fix truncated icon file
+
+
+2015/06/14 - Thorsten
+nfosmesa: Add conversion macros for several functions
+937 more to go
+
+
+2015/06/14 - Thorsten
+nfosmesa: Fix passing/returning GLhandleARB parameters on MacOSX
+
+
+2015/06/13 - Thorsten
+nfosmesa: convert Atari NULL to Host NULL when fetching pointer arguments
+
+
+2015/06/13 - Thorsten
+nfosmesa: support glGet() for enums that return more than 1 value
+
+
+2015/06/05 - Thorsten
+gencomp.c: move remaining #ifdefs to generated source
+
+
+2015/06/01 - Thorsten
+MacAranym: Reorder default config file location back, but
+use last entry if none is found
+
+
+2015/06/01 - Thorsten
+configure.ac: Fix setting srcdir to "." on darwin
+
+
+2015/05/31 - Thorsten
+Switch to automake
+
+
+2015/05/30 - Thorsten
+Inject loaded TOS instead of calling linea functions from aranym,
+making linea68000() obsolete
+
+
+2015/05/30 - Jens
+Added a first version of JIT2 for ARM (still incomplete and marked as experimental)
+- configure.ac / Makefile.in - Added support for --enable-jit2 for ARM
+- codegen_arm.*, compemu.h, compemu_midfunc_arm* - JIT2 support and improvements
+- compemu_support.cpp, gencomp_arm.c - JIT2 support
+
+2015/05/27 - Thorsten
+missed Changelog in last commit
+
+
+2015/05/27 - Thorsten
+gencpu.c: move remaining #ifdefs to generated source
+
+
+2015/05/21 - Jens
+compemu_support.cpp / compemu_arm.cpp - Slight optimizations
+
+2015/05/20 - Jens
+newcpu.cpp - Fixed call to JIT within m68kcall (Fixed NULL pointer)
+- Integrated DATA_BUFFER modification for JIT ARM (T. Borris):
+	codegen_arm.cpp
+	codegen_x86.cpp
+	compemu.h
+	compemu_midfunc_arm.cpp
+	compemu_midfunc_arm.h
+	compemu_support.cpp
+
+2015/05/19 - Thorsten
+cygwin/mingw: add version resource and icon to executable
+
+
+2015/05/19 - Thorsten
+Use Alert Dialog for results of --probe-fixed
+
+
+2015/05/19 - Thorsten
+MinGW: use same values as cygwin for setuid/setgid bits
+
+
+2015/05/19 - Thorsten
+cygwin/mingw: Use real path of executable instead of relying on argv[0]
+
+
+2015/05/19 - Thorsten
+fixed_memory_offset could be 0 when config file was initialized
+by non-JIT version; use default in this case
+
+
+2015/05/19 - Thorsten
+Fix some warnings with recent gcc
+
+
+2015/05/19 - Thorsten
+get_home_dir: Remove unused function
+
+
+2015/05/19 - Thorsten
+usbhost.cpp: fix off-by-1 bug in initializing arrays
+
+
+2015/05/17 - Thorsten
+Use HAVE_GET_WORD_UNSWAPPED and FULLMU only in generated source,
+not in program that generates it
+
+
+2015/05/15 - Thorsten
+Convert non-ascii characters to/from atari characterset in hostfs
+and clipbboard
+
+
+2015/05/15 - Thorsten
+Avoid unneccessary statfs/statvfs calls
+
+
+2015/05/15 - Thorsten
+Get rid of some bogus defines
+
+
+2015/05/15 - Thorsten
+Get rid of caddr_t
+
+
+2015/05/15 - Thorsten
+MinGW fixes
+
+
+2015/05/14 - Thorsten
+mathlib.h: Update asm code for IEEE rounding functions with
+code from current glibc (also avoids a segfault crash of
+recent versions of llvm/clang)
+
+
+2015/05/10 - Thorsten
+Display error dialog for some fatal startup errors
+(loading BootOS and memory allocation currently)
+
+
+2015/05/10 - Thorsten
+Fix a few warnings
+
+
+2015/05/10 - Thorsten
+Fix location of created config folder on MacOS when no config file present
+
+
+2015/05/07 - Thorsten
+Oops. Some of the recently removed files where needed by JIT target. Reverted.
+
+
+2015/05/07 - Thorsten
+Clean generated cpu sources from XCode project
+
+
+2015/05/07 - Thorsten
+Remove some obsolete files
+
+
+2015/05/06 - Thorsten
+gen_cpu.sh: another fix for copying generated sources
+
+
+2015/05/06 - Thorsten
+configure.ac: Cleanup summary report
+
+
+2015/05/03 - Thorsten
+Fix a wrong parameter in debug output
+
+
+2015/05/03 - Thorsten
+Add missing files + dependencies of recently added files
+to Xcode project
+
+
+2015/05/03 - Thorsten
+Fix initialization of hotkey defaults for MacOSX
+
+
+2015/04/22 - Thorsten
+use emmintrin.h directly for SSE2 definitions
+
+
+2015/04/22 - Thorsten
+Fix compilation on MacOSX
+
+
+2015/04/22 - Thorsten
+Some optimizations for reading/writing sectors through XHDI interface
+
+
+2015/04/21 - Thorsten
+Use non-throwing test_ram_boundary for phys_valid_address
+
+
+2015/04/19 - Thorsten
+Fix fmove.p for IEEE
+
+
+2015/04/19 - Thorsten
+Fix some FPU constants for IEEE
+
+
+2015/04/19 - Thorsten
+Fix some FPU constants for MPFR
+
+
+2015/04/18 - Thorsten
+Add commandline option to set configuration value by name
+
+
+2015/04/18 - Thorsten
+Clean-up and simplify config parameter handling
+
+
+2015/04/18 - Thorsten
+Generate cpufunctbl by gencpu instead of at runtime
+
+
+2015/04/18 - Thorsten
+Make fpu_{get|set}_{fpsr|fpcr} accessible
+
+
+2015/04/18 - Thorsten
+Report the type of os that was actually booted
+
+
+2015/04/18 - Thorsten
+Allow some devices to be enabled at runtime
+
+
+2015/04/18 - Thorsten
+Strip CRs from some source files
+
+
+2015/04/18 - Thorsten
+Make CDROM device names accessible
+
+
+2015/04/18 - Thorsten
+Don't bother to clear memory on startup
+
+
+2015/04/18 - Thorsten
+Fix FPSR Condition Code Bytemask
+
+
+2015/04/18 - Thorsten
+Compilation fixes for SDL configured with --enable-directfb
+
+
+2015/04/18 - Thorsten
+USB support: move extern declarations to header file
+
+
+2015/04/05 - Thorsten
+Some fixes for internal debugger
+
+
+2015/04/05 - Thorsten
+Fix compilation errors on MinGW with --enable-debug
+
+
+2015/04/05 - Thorsten
+Fix compilation problems for MinGW when using compilers from
+MinGW64 project
+
+
+2015/03/20 - Thorsten
+- reworked previous patch, and added options to do Warm-/Coldreboot
+  as discussed in ML
+
+
+2015/03/19 - Thorsten
+- bootos: clear first 64k of memory upon reboot
+
+
+2015/03/16 - Thorsten
+- dlgKeyboard.cpp: fix initialization of radio buttons
+
+
+2015/03/14 - Andreas
+- gencpu.c: Fix CAS2 emulation to update the compare operand when
+  comparison failed
+
+
+2015/03/14 - Thorsten
+- dlgDisk.cpp: prevent Floppy eject button from reacting on both click and release
+- sdlgui.cpp: prevent EXIT objects from continously reacting on mouse movements
+
+
+2015/03/14 - Thorsten
+- dlgDisk.cpp: do not update input fields if selected file
+  for generating image did not exist
+
+
+2015/03/03 - Thorsten
+- configure.ac: fixed saving/restoring CFLAGS and LIBS variables
+  during checks in some places
+
+
+2015/02/24 - Thorsten
+SDL2: Hotkeys did not work when opengl rendering was enabled
+
+
+2015/02/24 - Thorsten
+SDL2: switching resolutions during boot did not work
+when opengl rendering was enabled
+
+
+2015/02/24 - Thorsten
+Fixed trying to load the boot logo twice on startup
+
+
+2015/02/23 - David
+- We have support only for one device configuration, so we
+  filter attempts to change to configurations greater than 1.
+
+
+2015/02/23 - David
+- Refresh also the USB dialog after the Alert box is shown.
+
+
+2015/02/23 - David
+- USB dialog now shows devices instead of interfaces.
+
+
+2015/02/21 - Thorsten
+- tools/dist-cygwin.sh: fetch list of needed dlls from executable
+  instead of hardcoding it
+- tools/ldd.c: new tool to list linked dlls
+
+
+2015/02/21 - Thorsten
+Right-Ctrl could not be used as Hotkey-Modifier on Win32
+
+
+2015/02/19 - Thorsten
+Fix a few warnings with --enable-lilo
+
+
+2015/02/19 - David
+- Force redraw of USB dialog always at entering,
+  otherwise we see the old device list (scrolled)
+  until we move the mouse.
+
+
+2015/02/19 - David
+- Increase the maximum number of USB devices (interfaces)
+  that we can handle from 9 to 32.
+
+
+2015/02/19 - David
+- Fix wrong record of the USB ports being used.
+
+
+2015/02/17 - Thorsten
+Fix possible freeze during reboot.
+
+
+2015/02/17 - Thorsten
+- cpummu.h: remove unused function
+- newcpu.c: use correct mask when setting MMU root pointer
+
+
+2015/02/14 - Thorsten
+- another small fixe to #ifdefs
+
+
+2015/02/14 - Thorsten
+- Small fix of debug output
+
+
+2015/02/14 - Thorsten
+- Fix mmu_dump_table()
+
+
+2015/02/12 - David
+- Cosmetic (USB sources).
+
+
+2015/02/12 - David
+- Fix handling of CONNECT/DISCONNECT buttons in USB dialog.
+
+
+2015/02/12 - David
+- Inform guest OS about USB devices disconnected
+  when requesting new USB devices list.
+
+
+2015/02/11 - David
+- Fix regression in USB dialog.
+
+
+2015/02/11 - Thorsten
+- src/Unix/main_unix.cpp: fix compilation if FIXED_ADDRESSING is not used
+
+
+2015/02/11 - Thorsten
+make setting of FMEMORY configurable.
+
+
+2015/02/11 - Thorsten
+use more consistent exit codes for failures.
+
+
+2015/02/11 - Thorsten
+support EXTENDED_SIGSEGV on MinGW
+
+
+2015/02/10 - Thorsten
+add tool to strip binutils aexec header from executables;
+needed to make SLBs work on MagiC
+
+
+2015/02/10 - Thorsten
+- atari/CONFIGVARS: auto-detect CROSS-compilation environment
+
+
+2015/02/10 - Thorsten
+- tinygl_loadslb.c: remove "libname" argument from
+  slb_load_tiny_gl(); MiNT will refuse to load the
+  library anyways if it does not match the header
+
+
+2015/02/10 - Thorsten
+Fix callbacks in generated tiny_gl.slb
+
+
+2015/02/09 - Thorsten
+Fix some debug output
+
+
+2015/02/09 - Thorsten
+add scripts for distributing cygwin installer
+
+
+2015/02/09 - Thorsten
+- configure.ac: fix building on OSX
+
+
+2015/02/09 - Thorsten
+- nfvdi: fix drawing diagonal lines
+
+
+2015/02/09 - Thorsten
+- sdlgui: sync with hatari sources
+
+
+2015/01/27 - Thorsten
+- sdlgui: move dialogs to resource files
+          add dialog for hostfs configuration
+
+2015/01/27 - Patrice
+- nfaudio: prevent buffer overflow on Atari side if config file sets more samples
+  than the buffer size in zmagxsnd.prg can handle.
+
+2015/01/17 - Patrice
+- dma audio: Calculate current position, instead of always returning middle of
+  buffer played.
+
+2014/11/25 - Jens
+configure.ac : Use armv6 code and fast-math for Android/ARM
+
+2014/11/23 - Jens
+- android - Android build scripts
+- ndebug.cpp - Android logcat logging
+- configure.ac, Makefile.in, m4/ax_prog_cc*.m4 - Cross compilation configuration. Required for Android
+
+2014/11/18 - Jens
+- hostscreen.cpp : Building with SDL2. May be still some work to do, for FB mode
+
+2014/11/06 - Jens
+- Integrated Lubomyr Lisen Android changes:
+   * renamed: src/uae_cpu/memory.h -> src/uae_cpu/memory-uae.h
+   * modified: project.pbxproj gen_machfiles.sh sigsegv_darwin_x86.cpp
+	sigsegv_xbsd.cpp acia.cpp acsifdc.cpp aradata.cpp audio_crossbar.cpp
+	audio_dma.cpp blitter.cpp disasm-builtin.cpp disasm-glue.cpp dsp.cpp
+	fakeio.cpp hardware.cpp hostscreen.cpp ikbd.cpp ndebug.h joypads.cpp
+	mfp.cpp midi.cpp midi_file.cpp midi_sequencer.cpp mmu.cpp hostfs.cpp
+	ncr5380.cpp ndebug.cpp rtc.cpp scc.cpp codegen_arm.h compemu_fpp.cpp
+	compemu_support.cpp gencomp.c gencomp_arm.c cpu_emulation.h cpummu.cpp
+	debug.cpp fpu_ieee.cpp fpu_mpfr.cpp fpu_uae.cpp fpu_x86.cpp gencpu.c
+	memory.cpp newcpu.cpp newcpu.h videl.cpp yamaha.cpp
+
+2014/11/01 - Jens
+configure.ac - Build on MacOSX 10.10 (Yosemite)
+MacAranym.xcodeproj - sigsegv_handler_x86.h added
+
+2014/11/01 - Jens
+configure.ac - Fixed faulty case
+
+2014/11/01 - Jens
+configure.ac - Enable ARMv7 to 9 and set -marm to disable thumb instructions, not covered by sigsegv handler
+
+2014/!0/26 - Jens
+- Remove debug information from Suse rpmbuild package
+
+2014/10/22 - Jens
+- configure.ac : another clang options fix for FreeBSD x86_64, locate SDL_image in non standard directory (FreeBSD nfjpeg support)
+
+2014/10/21 - Jens
+- configure.ac : clang options for FreeBSD x86_64
+
+2014/10/20 - Petr
+- config.{sub,guess}: updated from 2010-01-22 to 2012-02-10, for ARM64 arch
+
+
+2014/10/19 - Andreas
+- main.cpp: Replace SDL_static_cast with plain cast to remain compatible
+  with SDL 1.2.12
+
+
+2014/10/17 - Jens
+- sigsegv support for kfreebsd-amd64 / freebsd i386 (maybe also freebsd amd64, too)
+- 32 Bit mapping on x64
+- Fixed link error if nfclipbrd is disabled
+
+
 *** repository tagged as ARANYM_1_0_2
 
 2014/10/17 - Petr

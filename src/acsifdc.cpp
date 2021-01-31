@@ -35,7 +35,7 @@
 
 #include "hardware.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "acsifdc.h"
 #include "ncr5380.h"
 #include "parameters.h"
@@ -391,6 +391,7 @@ void ACSIFDC::fdc_exec_command()
 	switch(d)
 	{
 		case 2:
+		case 6:
 			d=0;
 			break;
 		case 4:
@@ -398,7 +399,6 @@ void ACSIFDC::fdc_exec_command()
 			// we don't emulate second floppy drive
 			d=-1;
 			break;
-		case 6:
 		case 0:
 			d=-1;
 			break;
@@ -425,11 +425,13 @@ void ACSIFDC::fdc_exec_command()
 					break;
 				case 0x30:
 					fdc_track+=dir;
+					/* fall through */
 				case 0x20:
 					head+=dir;
 					break;
 				case 0x50:
 					fdc_track++;
+					/* fall through */
 				case 0x40:
 					if (head<tracks)
 						head++;
@@ -437,6 +439,7 @@ void ACSIFDC::fdc_exec_command()
 					break;
 				case 0x70:
 					fdc_track--;
+					/* fall through */
 				case 0x60:
 					if (head > 0)
 						head--;

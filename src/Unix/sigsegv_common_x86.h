@@ -1,5 +1,13 @@
 #include "disasm-glue.h"
 
+/* for debug output only */
+#ifdef CPU_i386
+#define REG_RIP_NAME "eip"
+#endif
+#ifdef CPU_x86_64
+#define REG_RIP_NAME "rip"
+#endif
+
 enum transfer_type_t {
 	TYPE_UNKNOWN,
 	TYPE_LOAD,
@@ -32,7 +40,7 @@ enum instruction_t {
 	INSTR_MOV32,
 	INSTR_MOVIMM8,
 	INSTR_MOVIMM32,
-	INSTR_OR8,
+	INSTR_ORMEM,
 	INSTR_ADDIMM8,
 	INSTR_ORIMM8,
 	INSTR_ANDIMM8,
@@ -51,106 +59,19 @@ enum instruction_t {
 	INSTR_SUBLIMM8,
 	INSTR_XORLIMM8,
 	INSTR_CMPLIMM8,
-	INSTR_AND8,
-	INSTR_ADD8,
-	INSTR_SUB8,
-	INSTR_CMP8,
+	INSTR_ANDMEM,
+	INSTR_ADDMEM,
+	INSTR_SUBMEM,
+	INSTR_CMPMEM,
 	INSTR_DIV8,
 	INSTR_IDIV8,
 	INSTR_MUL8,
 	INSTR_IMUL8,
-	INSTR_NEG8,
-	INSTR_NOT8,
+	INSTR_NEGMEM,
+	INSTR_NOTMEM,
 	INSTR_TESTIMM8,
-	INSTR_XOR8
+	INSTR_XORMEM
 };
-
-
-#if DEBUG && defined(DISASM_USE_OPCODES)
-#include <dis-asm.h>
-
-struct opcodes_info {
-	char linebuf[128];
-	size_t bufsize;
-	size_t linepos;
-	disassemble_info opcodes_info;
-};
-
-
-static int opcodes_printf(void *info, const char *format, ...)
-{
-	struct opcodes_info *opcodes_info = (struct opcodes_info *)info;
-	va_list args;
-	int len;
-	size_t remain;
-	
-	va_start(args, format);
-	remain = opcodes_info->bufsize - opcodes_info->linepos - 1;
-	len = vsnprintf(opcodes_info->linebuf + opcodes_info->linepos, remain, format, args);
-	if (len > 0)
-	{
-		if ((size_t)len > remain)
-			len = remain;
-		opcodes_info->linepos += len;
-	}
-	va_end(args);
-	return len;
-}
-
-static const uint8 *x86_disasm(const uint8 *ainstr, char *buf)
-{
-	struct opcodes_info info;
-	int len;
-	int i;
-	char *opcode;
-	char *p;
-	
-	info.linepos = 0;
-	info.bufsize = sizeof(info.linebuf);
-	INIT_DISASSEMBLE_INFO(info.opcodes_info, &info, opcodes_printf);
-	info.opcodes_info.buffer = (bfd_byte *)ainstr;
-	info.opcodes_info.buffer_length = 15; // largest instruction size on x86
-	info.opcodes_info.buffer_vma = (uintptr)ainstr;
-#ifdef CPU_i386
-	info.opcodes_info.mach = bfd_mach_i386_i386;
-#else
-	info.opcodes_info.mach = bfd_mach_x86_64;
-#endif
-	len = print_insn_i386(info.opcodes_info.buffer_vma, &info.opcodes_info);
-	info.linebuf[info.linepos] = '\0';
-#ifdef CPU_i386
-	sprintf(buf, "[%08x]", (uintptr)ainstr);
-#else
-	sprintf(buf, "[%016lx]", (uintptr)ainstr);
-#endif
-	for (i = 0; i < 7 && i < len; i++)
-	{
-		sprintf(buf + strlen(buf), " %02x", ainstr[i]);
-	}
-	for (; i < 7; i++)
-		strcat(buf, "   ");
-	opcode = info.linebuf;
-	if (strncmp(opcode, "addr32", 6) == 0)
-	{
-		opcode += 6;
-		while (*opcode == ' ')
-			opcode++;
-	}		
-	p = strchr(opcode, ' ');
-	if (p)
-	{
-		*p++ = '\0';
-		while (*p == ' ')
-			p++;
-	}
-	sprintf(buf + strlen(buf), "  %-10s", opcode);
-	if (p)
-		strcat(buf, p);
-	if (len > 0)
-		ainstr += len;
-	return ainstr;
-}
-#endif
 
 
 static inline int get_instr_size_add(const uint8 *p)
@@ -338,9 +259,7 @@ static const int x86_reg_map[] = {
 #ifdef USE_JIT	/* does not compile with default configure */
 	D(compiler_status());
 #endif
-	D(bug("\nBUS ERROR fault address is %08x", addr));
-
-	D(bug("PC %08x", m68k_getpc())); 
+	D(bug("[%08x] BUS ERROR fault address is %08x", m68k_getpc(), addr));
 
 #ifdef HW_SIGSEGV
 
@@ -381,15 +300,13 @@ static const int x86_reg_map[] = {
 	}
 
 	/* Repeat prefix not handled */
-#if DEBUG
 	if (addr_instr[0] == 0xf3 ||
 		addr_instr[0] == 0xf2)
 	{
-		D(panicbug("repeat prefix"));
+		panicbug("repeat prefix");
 		addr_instr++;
 		len++;
 	}
-#endif
 
 #ifdef CPU_x86_64
 	// REX prefix
@@ -424,7 +341,23 @@ static const int x86_reg_map[] = {
 			D(bug("ADD m8, r8"));
 			size = 1;
 			transfer_type = TYPE_STORE;
-			instruction = INSTR_ADD8;
+			instruction = INSTR_ADDMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x01:
+			if (size == 8)
+			{
+				D(bug("ADD m64, r64"));
+			} else if (size == 2)
+			{
+				D(bug("ADD m16, r16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("ADD m32, r32"));
+			}
+			instruction = INSTR_ADDMEM;
+			transfer_type = TYPE_STORE;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -432,7 +365,23 @@ static const int x86_reg_map[] = {
 			D(bug("ADD r8, m8"));
 			size = 1;
 			transfer_type = TYPE_LOAD;
-			instruction = INSTR_ADD8;
+			instruction = INSTR_ADDMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x03:
+			if (size == 8)
+			{
+				D(bug("ADD r64, m64"));
+			} else if (size == 2)
+			{
+				D(bug("ADD r16, m16"));
+			} else if (size == 4)
+			{
+				D(bug("ADD r32, m32"));
+			}
+			instruction = INSTR_ADDMEM;
+			transfer_type = TYPE_LOAD;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -440,7 +389,23 @@ static const int x86_reg_map[] = {
 			D(bug("SUB m8, r8"));
 			size = 1;
 			transfer_type = TYPE_STORE;
-			instruction = INSTR_SUB8;
+			instruction = INSTR_SUBMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x29:
+			if (size == 8)
+			{
+				D(bug("SUB m64, r64"));
+			} else if (size == 2)
+			{
+				D(bug("SUB m16, r16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("SUB m32, r32"));
+			}
+			instruction = INSTR_SUBMEM;
+			transfer_type = TYPE_STORE;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -448,7 +413,23 @@ static const int x86_reg_map[] = {
 			D(bug("SUB r8, m8"));
 			size = 1;
 			transfer_type = TYPE_LOAD;
-			instruction = INSTR_SUB8;
+			instruction = INSTR_SUBMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x2b:
+			if (size == 8)
+			{
+				D(bug("SUB r64, m64"));
+			} else if (size == 2)
+			{
+				D(bug("SUB r16, m16"));
+			} else if (size == 4)
+			{
+				D(bug("SUB r32, m32"));
+			}
+			instruction = INSTR_SUBMEM;
+			transfer_type = TYPE_LOAD;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -456,7 +437,23 @@ static const int x86_reg_map[] = {
 			D(bug("OR m8, r8"));
 			size = 1;
 			transfer_type = TYPE_STORE;
-			instruction = INSTR_OR8;
+			instruction = INSTR_ORMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x09:
+			if (size == 8)
+			{
+				D(bug("OR m64, r64"));
+			} else if (size == 2)
+			{
+				D(bug("OR m16, r16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("OR m32, r32"));
+			}
+			instruction = INSTR_ORMEM;
+			transfer_type = TYPE_STORE;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -464,7 +461,23 @@ static const int x86_reg_map[] = {
 			D(bug("OR r8, m8"));
 			size = 1;
 			transfer_type = TYPE_LOAD;
-			instruction = INSTR_OR8;
+			instruction = INSTR_ORMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x0b:
+			if (size == 8)
+			{
+				D(bug("OR r64, m64"));
+			} else if (size == 2)
+			{
+				D(bug("OR r16, m16"));
+			} else if (size == 4)
+			{
+				D(bug("OR r32, m32"));
+			}
+			instruction = INSTR_ORMEM;
+			transfer_type = TYPE_LOAD;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -520,7 +533,23 @@ static const int x86_reg_map[] = {
 			D(bug("AND m8, r8"));
 			size = 1;
 			transfer_type = TYPE_STORE;
-			instruction = INSTR_AND8;
+			instruction = INSTR_ANDMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x21:
+			if (size == 8)
+			{
+				D(bug("AND m64, r64"));
+			} else if (size == 2)
+			{
+				D(bug("AND m16, r16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("AND m32, r32"));
+			}
+			instruction = INSTR_ANDMEM;
+			transfer_type = TYPE_STORE;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -528,7 +557,23 @@ static const int x86_reg_map[] = {
 			D(bug("AND r8, m8"));
 			size = 1;
 			transfer_type = TYPE_LOAD;
-			instruction = INSTR_AND8;
+			instruction = INSTR_ANDMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x23:
+			if (size == 8)
+			{
+				D(bug("AND r64, m64"));
+			} else if (size == 2)
+			{
+				D(bug("AND r16, m16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("AND r32, m32"));
+			}
+			instruction = INSTR_ANDMEM;
+			transfer_type = TYPE_STORE;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -536,7 +581,71 @@ static const int x86_reg_map[] = {
 			D(bug("XOR m8, r8"));
 			size = 1;
 			transfer_type = TYPE_STORE;
-			instruction = INSTR_XOR8;
+			instruction = INSTR_XORMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x31:
+			if (size == 8)
+			{
+				D(bug("XOR m64, r64"));
+			} else if (size == 2)
+			{
+				D(bug("XOR m16, r16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("XOR m32, r32"));
+			}
+			instruction = INSTR_XORMEM;
+			transfer_type = TYPE_STORE;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x32:
+			D(bug("XOR r8,m8"));
+			size = 1;
+			transfer_type = TYPE_LOAD;
+			instruction = INSTR_XORMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x33:
+			if (size == 8)
+			{
+				D(bug("XOR r64, m64"));
+			} else if (size == 2)
+			{
+				D(bug("XOR r16, m16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("XOR r32, m32"));
+			}
+			instruction = INSTR_XORMEM;
+			transfer_type = TYPE_LOAD;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x38:
+			D(bug("CMP m8, r8"));
+			size = 1;
+			transfer_type = TYPE_STORE;
+			instruction = INSTR_CMPMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x39:
+			if (size == 8)
+			{
+				D(bug("CMP m64, r64"));
+			} else if (size == 2)
+			{
+				D(bug("CMP m16, r16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("CMP m32, r32"));
+			}
+			transfer_type = TYPE_STORE;
+			instruction = INSTR_CMPMEM;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -544,7 +653,23 @@ static const int x86_reg_map[] = {
 			D(bug("CMP r8, m8"));
 			size = 1;
 			transfer_type = TYPE_LOAD;
-			instruction = INSTR_CMP8;
+			instruction = INSTR_CMPMEM;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x3b:
+			if (size == 8)
+			{
+				D(bug("CMP r64, m64"));
+			} else if (size == 2)
+			{
+				D(bug("CMP r16, m16"));
+			} else /* if (size == 4) */
+			{
+				D(bug("CMP r32, m32"));
+			}
+			transfer_type = TYPE_LOAD;
+			instruction = INSTR_CMPMEM;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			break;
@@ -639,7 +764,6 @@ static const int x86_reg_map[] = {
 			}
 			break;
 		case 0x83:
-			size = 1;
 			transfer_type = TYPE_STORE;
 			switch ((addr_instr[1] >> 3) & 7)
 			{
@@ -680,21 +804,6 @@ static const int x86_reg_map[] = {
 			imm = *((uae_s8 *)(ainstr + len));
 			len++;
 			break;
-		case 0x8a:
-			D(bug("MOV r8, m8"));
-			size = 1;
-			transfer_type = TYPE_LOAD;
-			instruction = INSTR_MOV8;
-			reg = (addr_instr[1] >> 3) & 7;
-			len += 2 + get_instr_size_add(addr_instr + 1);
-			break;
-		case 0x8b:
-			D(bug("MOV r32, m32"));
-			transfer_type = TYPE_LOAD;
-			instruction = INSTR_MOV32;
-			reg = (addr_instr[1] >> 3) & 7;
-			len += 2 + get_instr_size_add(addr_instr + 1);
-			break;
 		case 0x88:
 			D(bug("MOV m8, r8"));
 			size = 1;
@@ -706,6 +815,21 @@ static const int x86_reg_map[] = {
 		case 0x89:
 			D(bug("MOV m32, r32"));
 			transfer_type = TYPE_STORE;
+			instruction = INSTR_MOV32;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x8a:
+			D(bug("MOV r8, m8"));
+			size = 1;
+			transfer_type = TYPE_LOAD;
+			instruction = INSTR_MOV8;
+			reg = (addr_instr[1] >> 3) & 7;
+			len += 2 + get_instr_size_add(addr_instr + 1);
+			break;
+		case 0x8b:
+			D(bug("MOV r32, m32"));
+			transfer_type = TYPE_LOAD;
 			instruction = INSTR_MOV32;
 			reg = (addr_instr[1] >> 3) & 7;
 			len += 2 + get_instr_size_add(addr_instr + 1);
@@ -738,6 +862,8 @@ static const int x86_reg_map[] = {
 			break;
 		case 0xf6:
 			size = 1;
+			/* fall through */
+		case 0xf7:
 			len += 2 + get_instr_size_add(addr_instr + 1);
 			switch ((addr_instr[1] >> 3) & 7)
 			{
@@ -751,12 +877,12 @@ static const int x86_reg_map[] = {
 			case 2:
 				D(bug("NOT m8"));
 				transfer_type = TYPE_STORE;
-				instruction = INSTR_NOT8;
+				instruction = INSTR_NOTMEM;
 				break;
 			case 3:
 				D(bug("NEG m8"));
 				transfer_type = TYPE_STORE;
-				instruction = INSTR_NEG8;
+				instruction = INSTR_NEGMEM;
 				break;
 			case 4:
 				D(bug("MUL m8"));
@@ -799,36 +925,22 @@ static const int x86_reg_map[] = {
 #if DEBUG
 	{
 		const uint8 *a = ainstr;
-		switch (len)
-		{
-		case 1:
-			D(bug("instruction is %02x, len %d", a[0], len));
-			break;
-		case 2:
-			D(bug("instruction is %02x %02x, len %d", a[0], a[1], len));
-			break;
-		case 3:
-			D(bug("instruction is %02x %02x %02x, len %d", a[0], a[1], a[2], len));
-			break;
-		case 4:
-			D(bug("instruction is %02x %02x %02x %02x, len %d", a[0], a[1], a[2], a[3], len));
-			break;
-		case 5:
-			D(bug("instruction is %02x %02x %02x %02x %02x, len %d", a[0], a[1], a[2], a[3], a[4], len));
-			break;
-		case 6:
-			D(bug("instruction is %02x %02x %02x %02x %02x %02x, len %d", a[0], a[1], a[2], a[3], a[4], a[5], len));
-			break;
-		default:
-			D(bug("instruction is %02x %02x %02x %02x %02x %02x %02x %s, len %d", a[0], a[1], a[2], a[3], a[4], a[5], a[6], len > 7 ? "..." : "", len));
-			break;
-		}
-	}
-#ifdef DISASM_USE_OPCODES
-	{
-		char buf[128];
+		int i;
+		char scratch[1024];
 		
-		x86_disasm(ainstr, buf);
+		strcpy(scratch, "instruction is");
+		for (i = 0; i < len && i < 7; i++)
+			sprintf(scratch + strlen(scratch), " %02x", a[i]);
+		if (i > 7)
+			strcat(scratch, "...");
+		sprintf(scratch + strlen(scratch), ", len %d", len);
+		D(bug("%s", scratch));
+	}
+#ifdef HAVE_DISASM_X86
+	{
+		char buf[256];
+		
+		x86_disasm(ainstr, buf, 1);
 		bug("%s", buf);
 	}
 #endif
@@ -887,7 +999,7 @@ static const int x86_reg_map[] = {
 				break;
 			case INSTR_MOV32:
 #ifdef CPU_x86_64
-				if (rex.W)
+				if (size == 8)
 				{
 					/* TODO: needs HWget_q */
 					panicbug("MOV r64, m32 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
@@ -899,13 +1011,74 @@ static const int x86_reg_map[] = {
 				else
 					*((uae_u16 *)preg) = SDL_SwapBE16(HWget_w(addr));
 				break;
-			case INSTR_OR8:
-				*((uae_u8 *)preg) |= HWget_b(addr);
-				set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+			case INSTR_ORMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("OR r64, m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					*((uae_u8 *)preg) |= HWget_b(addr);
+					set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					*((uae_u16 *)preg) |= SDL_SwapBE16(HWget_w(addr));
+					set_word_eflags(*((uae_u16 *)preg), CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					*((uae_u32 *)preg) |= SDL_SwapBE32(HWget_l(addr));
+					set_long_eflags(*((uae_u32 *)preg), CONTEXT_NAME);
+				}
 				break;
-			case INSTR_AND8:
-				*((uae_u8 *)preg) &= HWget_b(addr);
-				set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+			case INSTR_ANDMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("AND r64, m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					*((uae_u8 *)preg) &= HWget_b(addr);
+					set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					*((uae_u16 *)preg) &= SDL_SwapBE16(HWget_w(addr));
+					set_word_eflags(*((uae_u16 *)preg), CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					*((uae_u32 *)preg) &= SDL_SwapBE32(HWget_l(addr));
+					set_long_eflags(*((uae_u32 *)preg), CONTEXT_NAME);
+				}
+				break;
+			case INSTR_XORMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("XOR r64, m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					*((uae_u8 *)preg) ^= HWget_b(addr);
+					set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					*((uae_u16 *)preg) ^= SDL_SwapBE16(HWget_w(addr));
+					set_word_eflags(*((uae_u16 *)preg), CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					*((uae_u32 *)preg) ^= SDL_SwapBE32(HWget_l(addr));
+					set_long_eflags(*((uae_u32 *)preg), CONTEXT_NAME);
+				}
 				break;
 			case INSTR_MOVZX8:
 #ifdef CPU_x86_64
@@ -942,18 +1115,77 @@ static const int x86_reg_map[] = {
 				*((uae_s64 *)preg) = (uae_s32)SDL_SwapBE32(HWget_l(addr));
 				break;
 #endif
-			case INSTR_ADD8:
-				*((uae_u8 *)preg) += HWget_b(addr);
-				set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+			case INSTR_ADDMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("ADD r64, m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					*((uae_u8 *)preg) += HWget_b(addr);
+					set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					*((uae_u16 *)preg) += SDL_SwapBE16(HWget_w(addr));
+					set_byte_eflags(*((uae_u16 *)preg), CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					*((uae_u32 *)preg) += SDL_SwapBE32(HWget_l(addr));
+					set_byte_eflags(*((uae_u32 *)preg), CONTEXT_NAME);
+				}
 				break;
-			case INSTR_SUB8:
-				*((uae_u8 *)preg) -= HWget_b(addr);
-				set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+			case INSTR_SUBMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("SUB r64, m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					*((uae_u8 *)preg) -= HWget_b(addr);
+					set_byte_eflags(*((uae_u8 *)preg), CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					*((uae_u16 *)preg) -= SDL_SwapBE16(HWget_w(addr));
+					set_word_eflags(*((uae_u16 *)preg), CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					*((uae_u32 *)preg) -= SDL_SwapBE32(HWget_l(addr));
+					set_long_eflags(*((uae_u32 *)preg), CONTEXT_NAME);
+				}
 				break;
-			case INSTR_CMP8:
-				imm = *((uae_u8 *)preg);
-				imm -= HWget_b(addr);
-				set_byte_eflags(imm, CONTEXT_NAME);
+			case INSTR_CMPMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("CMP r64, m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = *((uae_u8 *)preg);
+					imm -= HWget_b(addr);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = *((uae_u16 *)preg);
+					imm -= SDL_SwapBE16(HWget_w(addr));
+					set_word_eflags(imm, CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = *((uae_u32 *)preg);
+					imm -= SDL_SwapBE32(HWget_l(addr));
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
 				break;
 			case INSTR_DIV8:
 				pom1 = CONTEXT_AEAX & 0xffffUL;
@@ -991,7 +1223,7 @@ static const int x86_reg_map[] = {
 		D(bug("WRITE instruction %X", instruction));
 		switch (instruction) {
 			case INSTR_MOV8:
-				D2(bug("MOV value = $%x\n", *((uae_u8 *)preg)));
+				D2(bug("MOV value = $%x", *((uae_u8 *)preg)));
 				HWput_b(addr, *((uae_u8 *)preg));
 				break;
 			case INSTR_MOV32:
@@ -1008,29 +1240,153 @@ static const int x86_reg_map[] = {
 				else
 					HWput_w(addr, SDL_SwapBE16(*((uae_u16 *)preg)));
 				break;
-			case INSTR_AND8:
+			case INSTR_ANDMEM:
 				imm = HWget_b(addr);
 				imm &= *((uae_u8 *)preg);
 				HWput_b(addr, imm);
 				set_byte_eflags(imm, CONTEXT_NAME);
 				break;
-			case INSTR_ADD8:
-				imm = HWget_b(addr);
-				imm += *((uae_u8 *)preg);
-				HWput_b(addr, imm);
-				set_byte_eflags(imm, CONTEXT_NAME);
+			case INSTR_ADDMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWput_q */
+					panicbug("ADD m64, r64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = HWget_b(addr);
+					imm += *((uae_u8 *)preg);
+					HWput_b(addr, imm);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = SDL_SwapBE16(HWget_w(addr));
+					imm += *((uae_u16 *)preg);
+					HWput_w(addr, SDL_SwapBE16(imm));
+					set_word_eflags(SDL_SwapBE16(imm), CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = SDL_SwapBE32(HWget_l(addr));
+					imm += *((uae_u32 *)preg);
+					HWput_l(addr, SDL_SwapBE32(imm));
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
 				break;
-			case INSTR_SUB8:
-				imm = HWget_b(addr);
-				imm -= *((uae_u8 *)preg);
-				HWput_b(addr, imm);
-				set_byte_eflags(imm, CONTEXT_NAME);
+			case INSTR_SUBMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWput_q */
+					panicbug("SUB m64, r64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = HWget_b(addr);
+					imm -= *((uae_u8 *)preg);
+					HWput_b(addr, imm);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = SDL_SwapBE16(HWget_w(addr));
+					imm -= *((uae_u16 *)preg);
+					HWput_w(addr, SDL_SwapBE16(imm));
+					set_word_eflags(imm, CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = SDL_SwapBE32(HWget_l(addr));
+					imm -= *((uae_u32 *)preg);
+					HWput_l(addr, SDL_SwapBE32(imm));
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
 				break;
-			case INSTR_OR8:
-				imm = HWget_b(addr);
-				imm |= *((uae_u8 *)preg);
-				HWput_b(addr, imm);
-				set_byte_eflags(imm, CONTEXT_NAME);
+			case INSTR_CMPMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWget_q */
+					panicbug("CMP m64, r64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = HWget_b(addr);
+					imm -= *((uae_u8 *)preg);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = SDL_SwapBE16(HWget_w(addr));
+					imm -= *((uae_u16 *)preg);
+					set_word_eflags(imm, CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = SDL_SwapBE32(HWget_l(addr));
+					imm -= *((uae_u32 *)preg);
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
+				break;
+			case INSTR_XORMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWput_q */
+					panicbug("XOR m64, r64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = HWget_b(addr);
+					imm ^= *((uae_u8 *)preg);
+					HWput_b(addr, imm);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = SDL_SwapBE16(HWget_w(addr));
+					imm ^= *((uae_u16 *)preg);
+					HWput_w(addr, SDL_SwapBE16(imm));
+					set_word_eflags(imm, CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = SDL_SwapBE32(HWget_l(addr));
+					imm ^= *((uae_u32 *)preg);
+					HWput_l(addr, SDL_SwapBE32(imm));
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
+				break;
+			case INSTR_ORMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWput_q */
+					panicbug("OR m64, r64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = HWget_b(addr);
+					imm |= *((uae_u8 *)preg);
+					HWput_b(addr, imm);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = SDL_SwapBE16(HWget_w(addr));
+					imm |= *((uae_u16 *)preg);
+					HWput_w(addr, SDL_SwapBE16(imm));
+					set_word_eflags(imm, CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = SDL_SwapBE32(HWget_l(addr));
+					imm |= *((uae_u32 *)preg);
+					HWput_l(addr, SDL_SwapBE32(imm));
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
 				break;
 			case INSTR_ADDIMM8:
 				imm += HWget_b(addr);
@@ -1072,13 +1428,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm += HWget_l(addr);
-					HWput_l(addr, imm);
+					imm += SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm += HWget_w(addr);
-					HWput_w(addr, imm);
+					imm += SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1093,13 +1449,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm |= HWget_l(addr);
-					HWput_l(addr, imm);
+					imm |= SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm |= HWget_w(addr);
-					HWput_w(addr, imm);
+					imm |= SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1114,13 +1470,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm &= HWget_l(addr);
-					HWput_l(addr, imm);
+					imm &= SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm &= HWget_w(addr);
-					HWput_w(addr, imm);
+					imm &= SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1135,13 +1491,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm = HWget_l(addr) - imm;
-					HWput_l(addr, imm);
+					imm = SDL_SwapBE32(HWget_l(addr)) - imm;
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm = HWget_w(addr) - imm;
-					HWput_w(addr, imm);
+					imm = SDL_SwapBE16(HWget_w(addr)) - imm;
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1156,13 +1512,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm ^= HWget_l(addr);
-					HWput_l(addr, imm);
+					imm ^= SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm ^= HWget_w(addr);
-					HWput_w(addr, imm);
+					imm ^= SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1177,11 +1533,11 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm = HWget_l(addr) - imm;
+					imm = SDL_SwapBE32(HWget_l(addr)) - imm;
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm = HWget_w(addr) - imm;
+					imm = SDL_SwapBE16(HWget_w(addr)) - imm;
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1196,13 +1552,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm += (uae_s32)HWget_l(addr);
-					HWput_l(addr, imm);
+					imm += (uae_s32)SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm += (uae_s16)HWget_w(addr);
-					HWput_w(addr, imm);
+					imm += (uae_s16)SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1217,13 +1573,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm |= (uae_s32)HWget_l(addr);
-					HWput_l(addr, imm);
+					imm |= (uae_s32)SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm |= (uae_s16)HWget_w(addr);
-					HWput_w(addr, imm);
+					imm |= (uae_s16)SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1238,13 +1594,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm &= (uae_s32)HWget_l(addr);
-					HWput_l(addr, imm);
+					imm &= (uae_s32)SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm &= (uae_s16)HWget_w(addr);
-					HWput_w(addr, imm);
+					imm &= (uae_s16)SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1259,13 +1615,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm = (uae_s32)HWget_l(addr) - imm;
-					HWput_l(addr, imm);
+					imm = (uae_s32)SDL_SwapBE32(HWget_l(addr)) - imm;
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm = (uae_s16)HWget_w(addr) - imm;
-					HWput_w(addr, imm);
+					imm = (uae_s16)SDL_SwapBE16(HWget_w(addr)) - imm;
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1280,13 +1636,13 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm ^= (uae_s32)HWget_l(addr);
-					HWput_l(addr, imm);
+					imm ^= (uae_s32)SDL_SwapBE32(HWget_l(addr));
+					HWput_l(addr, SDL_SwapBE32(imm));
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm ^= (uae_s16)HWget_w(addr);
-					HWput_w(addr, imm);
+					imm ^= (uae_s16)SDL_SwapBE16(HWget_w(addr));
+					HWput_w(addr, SDL_SwapBE16(imm));
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1301,11 +1657,11 @@ static const int x86_reg_map[] = {
 #endif
 				if (size == 4)
 				{
-					imm = (uae_s32)HWget_l(addr) - imm;
+					imm = (uae_s32)SDL_SwapBE32(HWget_l(addr)) - imm;
 					set_long_eflags(imm, CONTEXT_NAME);
 				} else
 				{
-					imm = (uae_s16)HWget_w(addr) - imm;
+					imm = (uae_s16)SDL_SwapBE16(HWget_w(addr)) - imm;
 					set_word_eflags(imm, CONTEXT_NAME);
 				}
 				break;
@@ -1314,32 +1670,64 @@ static const int x86_reg_map[] = {
 				break;
 			case INSTR_MOVIMM32:
 				if (size == 2)
-					HWput_w(addr, (uae_u16)imm);
+					HWput_w(addr, (uae_u16)SDL_SwapBE16(imm));
 				else
-					HWput_l(addr, (uae_u32)imm);
+					HWput_l(addr, (uae_u32)SDL_SwapBE32(imm));
 				break;
 			case INSTR_TESTIMM8:
 				imm &= HWget_b(addr);
 				set_byte_eflags(imm, CONTEXT_NAME);
 				break;
-			case INSTR_NOT8:
-				HWput_b(addr, ~(uae_u8)HWget_b(addr));
+			case INSTR_NOTMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWput_q */
+					panicbug("NOT m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					HWput_b(addr, ~(uae_u8)HWget_b(addr));
+				} else if (size == 2)
+				{
+					HWput_w(addr, SDL_SwapBE16(~(uae_u16)SDL_SwapBE16(HWget_w(addr))));
+				} else /* if (size == 4) */
+				{
+					HWput_l(addr, SDL_SwapBE32(~(uae_u32)SDL_SwapBE32(HWget_l(addr))));
+				}
 				/* eflags not affected */
 				break;
-			case INSTR_NEG8:
-				imm = ~(uae_u8)HWget_b(addr) + 1;
-				HWput_b(addr, imm);
-				set_byte_eflags(imm, CONTEXT_NAME);
+			case INSTR_NEGMEM:
+#ifdef CPU_x86_64
+				if (size == 8)
+				{
+					/* TODO: needs HWput_q */
+					panicbug("NEG m64 - unsupported mode: i[1-6]=%02x %02x %02x %02x %02x %02x", addr_instr[1], addr_instr[2], addr_instr[3], addr_instr[4], addr_instr[5], addr_instr[6]);
+					unknown_instruction();
+				} else
+#endif
+				if (size == 1)
+				{
+					imm = ~(uae_u8)HWget_b(addr) + 1;
+					HWput_b(addr, imm);
+					set_byte_eflags(imm, CONTEXT_NAME);
+				} else if (size == 2)
+				{
+					imm = ~(uae_u16)SDL_SwapBE16(HWget_w(addr)) + 1;
+					HWput_w(addr, SDL_SwapBE16(imm));
+					set_word_eflags(imm, CONTEXT_NAME);
+				} else /* if (size == 4) */
+				{
+					imm = ~(uae_u32)SDL_SwapBE32(HWget_l(addr)) + 1;
+					HWput_l(addr, SDL_SwapBE32(imm));
+					set_long_eflags(imm, CONTEXT_NAME);
+				}
 				if (imm == 0)
 					CONTEXT_AEFLAGS &= ~0x1;
 				else
 					CONTEXT_AEFLAGS |= 0x1;
-				break;
-			case INSTR_XOR8:
-				imm = HWget_b(addr);
-				imm ^= *((uae_u8 *)preg);
-				HWput_b(addr, imm);
-				set_byte_eflags(imm, CONTEXT_NAME);
 				break;
 			default:
 				abort();

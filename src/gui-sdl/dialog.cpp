@@ -18,14 +18,16 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include "sysdeps.h"
 #include "dialog.h"
+#include "input.h"
 
 Dialog::Dialog(SGOBJ *new_dlg)
 	: dlg(new_dlg), return_obj(-1), last_clicked_obj(-1), touch_exit_obj(-1)
 {
 	/* Init cursor position in dialog */
 	cursor.object = SDLGui_FindEditField(dlg, -1, SG_FIRST_EDITFIELD);
-	cursor.position = (cursor.object != -1 && dlg[cursor.object].txt) ? strlen(dlg[cursor.object].txt) : 0;
+	cursor.position = (cursor.object != -1 && dlg[cursor.object].txt) ? SDLGui_TextLen(dlg[cursor.object].txt) : 0;
 	cursor.blink_counter = SDL_GetTicks();
 	cursor.blink_state = true;
 }
@@ -85,6 +87,9 @@ void Dialog::mouseClick(const SDL_Event &event, int gui_x, int gui_y)
 
 	/* Memorize object on mouse button pressed event */
 	if (event.type == SDL_MOUSEBUTTONDOWN) {
+		/* ignore mouse wheel events reported as button presses here */
+		if (!(event.button.button >= 1 && event.button.button <= 3))
+			return;
 		SDLGui_UpdateObjState(dlg, clicked_obj, original_state, x, y);
 		last_clicked_obj = clicked_obj;
 		last_state = original_state;
@@ -132,8 +137,12 @@ void Dialog::keyPress(const SDL_Event &event)
 	}
 
 	int obj;
-	int keysym = event.key.keysym.sym;
-	SDL_Keymod mod = SDL_Keymod(event.key.keysym.mod);
+	SDL_Keycode keysym = event.key.keysym.sym;
+	int state;
+	if ((event.key.keysym.mod & HOTKEYS_MOD_MASK) == 0)
+		state  = SDL_GetModState(); // keysym.mod does not deliver single mod key presses for some reason
+	else
+		state = event.key.keysym.mod;	// May be send by SDL_PushEvent
 
 	if (cursor.object != -1) {
 		switch(keysym) {
@@ -143,18 +152,20 @@ void Dialog::keyPress(const SDL_Event &event)
 
 			case SDLK_BACKSPACE:
 				if (cursor.position > 0) {
-					memmove((void *)&dlg[cursor.object].txt[cursor.position-1],
-						&dlg[cursor.object].txt[cursor.position],
-						strlen(&dlg[cursor.object].txt[cursor.position])+1);
+					char *txt = (char *)dlg[cursor.object].txt;
+					int prev = SDLGui_ByteLen(txt, cursor.position-1);
+					int curr = SDLGui_ByteLen(txt, cursor.position);
+					memmove(&txt[prev], &txt[curr], strlen(&txt[curr]) + 1);
 					cursor.position--;
 				}
 				break;
 
 			case SDLK_DELETE:
-				if(cursor.position < (int)strlen(dlg[cursor.object].txt)) {
-					memmove((void *)&dlg[cursor.object].txt[cursor.position],
-						&dlg[cursor.object].txt[cursor.position+1],
-						strlen(&dlg[cursor.object].txt[cursor.position+1])+1);
+				if(cursor.position < SDLGui_TextLen(dlg[cursor.object].txt)) {
+					char *txt = (char *)dlg[cursor.object].txt;
+					int curr = SDLGui_ByteLen(txt, cursor.position);
+					int next = SDLGui_ByteLen(txt, cursor.position + 1);
+					memmove(&txt[curr], &txt[next], strlen(&txt[next]) + 1);
 				}
 				break;
 
@@ -164,7 +175,7 @@ void Dialog::keyPress(const SDL_Event &event)
 				break;
 
 			case SDLK_RIGHT:
-				if (cursor.position < (int)strlen(dlg[cursor.object].txt))
+				if (cursor.position < SDLGui_TextLen(dlg[cursor.object].txt))
 					cursor.position++;
 				break;
 
@@ -178,21 +189,21 @@ void Dialog::keyPress(const SDL_Event &event)
 
 			case SDLK_TAB:
 				SDLGui_MoveCursor(dlg, &cursor,
-					mod & KMOD_SHIFT ? SG_PREVIOUS_EDITFIELD : SG_NEXT_EDITFIELD);
+					(state & KMOD_SHIFT) ? SG_PREVIOUS_EDITFIELD : SG_NEXT_EDITFIELD);
 				break;
 
 			case SDLK_HOME:
-				if (mod & KMOD_CTRL)
+				if (state & KMOD_CTRL)
 					SDLGui_MoveCursor(dlg, &cursor, SG_FIRST_EDITFIELD);
 				else
 					cursor.position = 0;
 				break;
 
 			case SDLK_END:
-				if (mod & KMOD_CTRL)
+				if (state & KMOD_CTRL)
 					SDLGui_MoveCursor(dlg, &cursor, SG_LAST_EDITFIELD);
 				else
-					cursor.position = strlen(dlg[cursor.object].txt);
+					cursor.position = SDLGui_TextLen(dlg[cursor.object].txt);
 				break;
 
 			default:
@@ -209,16 +220,16 @@ void Dialog::keyPress(const SDL_Event &event)
 					case SDLK_KP_7: keysym = SDLK_7; break;
 					case SDLK_KP_8: keysym = SDLK_8; break;
 					case SDLK_KP_9: keysym = SDLK_9; break;
+					default: break;
 				}
 				/* If it is a "good" key then insert it into the text field */
-				if (((unsigned int)keysym >= 0x20) && ((unsigned int)keysym < 0x100)) {
+				/* FIXME: can't handle non-ascii characters here */
+				if (((unsigned int)keysym >= 0x20) && ((unsigned int)keysym < 0x80)) {
 					char *dlgtxt = (char *)dlg[cursor.object].txt;
-					if (strlen(dlg[cursor.object].txt) < dlg[cursor.object].w) {
-						memmove(&dlgtxt[cursor.position+1],
-							&dlg[cursor.object].txt[cursor.position],
-							strlen(&dlg[cursor.object].txt[cursor.position])+1);
-						dlgtxt[cursor.position] =
-							(mod & KMOD_SHIFT) ? toupper(keysym) : keysym;
+					if (SDLGui_TextLen(dlgtxt) < (int)dlg[cursor.object].w) {
+						int curr = SDLGui_ByteLen(dlgtxt, cursor.position);
+						memmove(&dlgtxt[curr + 1], &dlgtxt[curr], strlen(&dlgtxt[curr])+1);
+						dlgtxt[curr] = (state & KMOD_SHIFT) ? toupper(keysym) : keysym;
 						cursor.position++;
 					}
 				}
@@ -240,6 +251,11 @@ void Dialog::keyPress(const SDL_Event &event)
 			}
 			break;
 		default:
+			{
+				int masked_mod = state & HOTKEYS_MOD_MASK;
+				HOTKEY hotkey = check_hotkey(masked_mod, keysym);
+				handleHotkey(hotkey);
+			}
 			break;
 	}
 

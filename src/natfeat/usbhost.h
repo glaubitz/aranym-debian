@@ -1,7 +1,7 @@
 /*
  * USB host chip emulation
  *
- * Copyright (c) 2012 David Galvez. ARAnyM development team (see AUTHORS).
+ * Copyright (c) 2012-2015 David Galvez. ARAnyM development team (see AUTHORS).
  *
  * This file is part of the ARAnyM project which builds a new and powerful
  * TOS/FreeMiNT compatible virtual machine running on almost any hardware.
@@ -111,7 +111,8 @@
 /* Devices attached to the Atari */
 typedef struct {
 	int port_number;
-	int device_index;
+	int libusb_dev_idx;
+	int atari_dev_idx;
 	int32 interface;
 	uint16 busy;
 	uint16 wPortStatus;
@@ -126,11 +127,12 @@ typedef struct {
 /* Devices attached to the Host */
 typedef struct virtual_usbdev {
 	int idx_dev;
-	int idx_conf;
-	int idx_interface;	
+	struct libusb_device_descriptor dev_desc;
+	struct libusb_config_descriptor *config_desc; /* Only support for one configuration */
 	bool virtdev_available;
 	bool connected;
 	int port_number;
+	char product_name[MAX_PRODUCT_LENGTH];
 } virtual_usbdev_t;
 
 
@@ -145,10 +147,10 @@ typedef struct virtual_usbdev {
 				int len, int interval)
 
 	int submit_control_msg(struct usb_device *dev, unsigned long pipe, void *buffer,
-			        int len, struct devrequest *setup)
-      
+							int len, struct devrequest *setup)
+ 
 	int submit_bulk_msg(struct usb_device *dev, unsigned long pipe, void *buffer,
-		    		int len)
+							int len)
 */
 
 /*--- Class ---*/
@@ -163,7 +165,7 @@ private:
 				   devrequest *cmd);
 
 	int32 rh_port_status(memptr rh);
-		
+
 	int32 usb_lowlevel_init(void);
 	int32 usb_lowlevel_stop(void);
 	int32 submit_control_msg(uint32 pipe, memptr buffer, int32 len, memptr devrequest);
@@ -172,12 +174,27 @@ private:
 
 public:
 	USBHost();
-	~USBHost();	
+	~USBHost();
 	void reset();
 
 	const char *name() { return "USBHOST"; }
 	bool isSuperOnly() { return true; }
 	int32 dispatch(uint32 fncode);
 };
+
+/* External functions (usbhost.cpp) */
+
+extern void usbhost_init_libusb(void);
+extern int32 usbhost_get_device_list(void);
+extern void usbhost_free_usb_devices(void);
+extern int usbhost_claim_device(int virtdev_index);
+extern int usbhost_release_device(int virtdev_index);
+
+
+/* External variables (usbhost.cpp) */
+
+extern int number_ports_used;
+extern virtual_usbdev_t virtual_device[USB_MAX_DEVICE];
+
 
 #endif /* _USBHOST_H */

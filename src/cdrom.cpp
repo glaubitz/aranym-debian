@@ -1,6 +1,4 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id$
-/////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
 //
@@ -84,6 +82,9 @@ extern "C" {
 #include <sys/cdio.h>
 #include <sys/disklabel.h>
 #include <netinet/in.h>
+#ifdef OS_openbsd
+#include <sys/dkio.h>
+#endif
 
 // XXX
 #define BX_CD_FRAMESIZE 2048
@@ -706,7 +707,9 @@ cdrom_interface::eject_cdrom()
 #if (defined(OS_openbsd) || defined(OS_freebsd) || defined(OS_netbsd))
     (void) ioctl (fd, CDIOCALLOW);
     if (ioctl (fd, CDIOCEJECT) < 0)
+    {
 	  D(bug( "eject_cdrom: eject returns error." ));
+    }
 #endif
 
 #ifdef _WIN32

@@ -25,45 +25,18 @@
 #include "sdlgui.h"
 #include "dlgKeyboard.h"
 
-enum KEYBMOUSEDLG {
-	box_main,
-	box_wheel,
-	text_wheel,
-	ARROWKEYS,
-	EIFFEL,
-	box_altgr,
-	text_altgr,
-	ATARI_ALT,
-	MILAN_ALTGR,
-	APPLY,
-	CANCEL
-};
-
 /* The keyboard dialog: */
-static SGOBJ keyboarddlg[] =
-{
-	{ SGBOX, SG_BACKGROUND, 0, 0,0, 42,13, NULL },
+#define SDLGUI_INCLUDE_KEYBOARDDLG
+#include "sdlgui.sdl"
 
-	{ SGBOX, 0, 0, 2,2, 38,2, NULL },
-	{ SGTEXT, 0, 0, 3,1, 18,1, " Host mouse wheel " },
-	{ SGCHECKBOX, SG_SELECTABLE|SG_RADIO, 0, 3,3, 10+3,1, "Arrow keys" },
-	{ SGCHECKBOX, SG_SELECTABLE|SG_RADIO, 0, 19,3, 16+3,1, "Eiffel scancodes" },
-
-	{ SGBOX, 0, 0, 2,7, 38,2, NULL },
-	{ SGTEXT, 0, 0, 3,6, 16,1, " Host AltGr key " },
-	{ SGCHECKBOX, SG_SELECTABLE|SG_RADIO, 0, 3,8, 9+3,1, "Atari Alt" },
-	{ SGCHECKBOX, SG_SELECTABLE|SG_RADIO, 0, 19,8, 11+3,1, "Milan AltGr" },
-
-	{ SGBUTTON, SG_SELECTABLE|SG_EXIT|SG_DEFAULT, 0, 7,11, 8,1, "Apply" },
-	{ SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 28,11, 8,1, "Cancel" },
-	{ -1, 0, 0, 0,0, 0,0, NULL }
-};
 
 DlgKeyboard::DlgKeyboard(SGOBJ *dlg)
 	: Dialog(dlg)
 {
-	keyboarddlg[bx_options.ikbd.wheel_eiffel ? EIFFEL : ARROWKEYS].state |= SG_SELECTED;
-	keyboarddlg[bx_options.ikbd.altgr ? MILAN_ALTGR : ATARI_ALT].state |= SG_SELECTED;
+	keyboarddlg[EIFFEL].state = bx_options.ikbd.wheel_eiffel ? SG_SELECTED : 0;
+	keyboarddlg[ARROWKEYS].state = bx_options.ikbd.wheel_eiffel ? 0 : SG_SELECTED;
+	keyboarddlg[MILAN_ALTGR].state = bx_options.ikbd.altgr ? SG_SELECTED : 0;
+	keyboarddlg[ATARI_ALT].state = bx_options.ikbd.altgr ? 0 : SG_SELECTED;
 }
 
 DlgKeyboard::~DlgKeyboard()
@@ -77,6 +50,7 @@ int DlgKeyboard::processDialog(void)
 	switch(return_obj) {
 		case APPLY:
 			confirm();
+			/* fall through */
 		case CANCEL:
 			retval = Dialog::GUI_CLOSE;
 			break;

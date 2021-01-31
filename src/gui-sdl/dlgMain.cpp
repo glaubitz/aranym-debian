@@ -38,70 +38,20 @@
 #include "dlgHotkeys.h"
 #include "dlgDisk.h"
 #include "dlgUsb.h"
+#include "dlgHostfs.h"
 #include "bootos.h" // bootOs ptr
+#include "main.h"
 
 #ifdef OS_darwin
 	extern void refreshMenuKeys();
 #endif
 
 /* The main dialog: */
-enum MAINDLG {
-	box_main,
-	box_setup,
-	text_main,
-	ABOUT,
-	DISCS,
-	HOTKEYS,
-	KEYBOARD,
-	OS,
-	VIDEO,
-	NETWORK,
-	PARTITIONS,
-	USB,
-	text_conffile,
-	LOAD,
-	SAVE,
-	box_hotkeys,
-	text_hotkeys,
-	REBOOT,
-	SHUTDOWN,
-	FULLSCREEN,
-	SCREENSHOT,
-	HELP,
-	CLOSE
-};
-
-SGOBJ maindlg[] = {
-	{SGBOX, SG_BACKGROUND, 0, 0, 0, 76, 25, NULL},
-	{SGBOX, 0, 0, 17, 2, 44, 15, NULL},
-	{SGTEXT, 0, 0, 32, 1, 14, 1, " ARAnyM SETUP "},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 3, 18, 1, "About"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 5, 18, 1, "Disks"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 7, 18, 1, "Hotkeys"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 9, 18, 1, "Keyboard + mouse"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 11, 18, 1, "Operating System"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 41, 3, 18, 1, "Video"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 41, 5, 18, 1, "Networking"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 41, 7, 18, 1, "Partitions"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 41, 9, 18, 1, "USB"},
-
-	{SGTEXT, 0, 0, 22, 15, 12, 1, "Config file:"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 35, 15, 6, 1, "Load"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 43, 15, 6, 1, "Save"},
-	
-	{SGBOX, 0, 0, 17, 19, 44, 5, NULL},
-	{SGTEXT, 0, 0, 27, 18, 22, 1, " Quick Access Buttons "},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 20, 10, 1, "Reboot"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 19, 22, 10, 1, "Shutdown"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 32, 20, 12, 1, "Fullscreen"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 32, 22, 12, 1, "Screenshot"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT, 0, 47, 20, 12, 1, "Help"},
-	{SGBUTTON, SG_SELECTABLE|SG_EXIT|SG_DEFAULT, 0, 47, 22, 12, 1, "Close"},
-	{-1, 0, 0, 0, 0, 0, 0, NULL}
-};
+#define SDLGUI_INCLUDE_MAINDLG
+#include "sdlgui.sdl"
 
 static const char *ABOUT_TEXT =
-"            " VERSION_STRING "\n"
+"            %s\n"
 "            =============\n"
 "\n"
 "ARAnyM as an Open Source project has\n"
@@ -128,6 +78,11 @@ static const char *HELP_TEXT =
 "Changes must be confirmed with APPLY first. Note that all changes are applied immediately to a running ARAnyM.\n"
 "Some changes require system reboot in order to take effect. It's actually safest to always reboot after any change.";
 
+static const char *MEMORY_TEXT = 
+"Changing memory configuration here is not supported yet.\n"
+"You have to restart ARAnyM.";
+
+
 static void setState(int index, int bits, bool set)
 {
 	if (set)
@@ -141,7 +96,8 @@ DlgMain::DlgMain(SGOBJ *dlg)
 {
 	memset(path, 0, sizeof(path));
 	// if no bootOs available then disable the Reboot button
-	setState(REBOOT, SG_DISABLED, bootOs == NULL);
+	setState(WARMREBOOT, SG_DISABLED, bootOs == NULL);
+	setState(COLDREBOOT, SG_DISABLED, bootOs == NULL);
 }
 
 DlgMain::~DlgMain()
@@ -151,13 +107,36 @@ DlgMain::~DlgMain()
 #endif
 }
 
+#ifndef HAVE_VASPRINTF
+extern "C" int vasprintf(char **, const char *, va_list);
+#endif
+
+static void aboutalert(const char *fmt, ...)
+{
+	va_list args;
+	char *buf = NULL;
+	int ret;
+
+	va_start(args, fmt);
+	ret = vasprintf(&buf, fmt, args);
+	va_end(args);
+	if (ret >= 0)
+	{
+		SDLGui_Open(DlgAlertOpen(buf, ALERT_OK));
+		free(buf);
+	}
+	va_end(args);
+}
+
+
+
 int DlgMain::processDialog(void)
 {
 	int retval = Dialog::GUI_CONTINUE;
 
 	switch(return_obj) {
 		case ABOUT:
-			SDLGui_Open(DlgAlertOpen(ABOUT_TEXT, ALERT_OK));
+			aboutalert(ABOUT_TEXT, version_string);
 			break;
 		case DISCS:
 			SDLGui_Open(DlgDiskOpen());
@@ -183,6 +162,9 @@ int DlgMain::processDialog(void)
 		case USB:
 			SDLGui_Open(DlgUsbOpen());
 			break;
+		case HOSTFS:
+			SDLGui_Open(DlgHostfsOpen());
+			break;
 		case LOAD:
 			LoadSettings();
 			break;
@@ -191,9 +173,13 @@ int DlgMain::processDialog(void)
 			// best by allowing this Save button only after the "Apply" was used.
 			SaveSettings();
 			break;
-		case REBOOT:
+		case WARMREBOOT:
 			if (bootOs != NULL)
-				retval = Dialog::GUI_REBOOT;
+				retval = Dialog::GUI_WARMREBOOT;
+			break;
+		case COLDREBOOT:
+			if (bootOs != NULL)
+				retval = Dialog::GUI_COLDREBOOT;
 			break;
 		case SHUTDOWN:
 			retval = Dialog::GUI_SHUTDOWN;
@@ -247,7 +233,29 @@ void DlgMain::processResult(void)
 			if (dlgFileSelect) {
 				/* Load setting if pressed OK in fileselector */
 				if (dlgFileSelect->pressedOk()) {
-					loadSettings(path);
+					uint32 old_FastRAMSize = FastRAMSize;
+#if FIXED_ADDRESSING
+					unsigned long old_fixed_memory_offset = fixed_memory_offset;
+#endif
+					bool ret = loadSettings(path);
+					if (ret && (FastRAMSize != old_FastRAMSize
+#if FIXED_ADDRESSING
+						|| fixed_memory_offset != old_fixed_memory_offset
+#endif
+						))
+					{
+						/*
+						 * changing memory configuration here,
+						 * by releasing and re-allocating it,
+						 * does not work because it is too late.
+						 * Give a hint at least.
+						 */
+						FastRAMSize = old_FastRAMSize;
+#if FIXED_ADDRESSING
+						fixed_memory_offset = old_fixed_memory_offset;
+#endif
+						SDLGui_Open(DlgAlertOpen(MEMORY_TEXT, ALERT_OK));
+					}
 				}
 			}
 			break;
@@ -264,11 +272,48 @@ void DlgMain::processResult(void)
 	state = STATE_MAIN;
 }
 
+void DlgMain::handleHotkey(HOTKEY hotkey)
+{
+	int obj = -1;
+	switch (hotkey)
+	{
+	case HOTKEY_none:
+	case HOTKEY_debug:
+	case HOTKEY_ungrab:
+		break;
+	case HOTKEY_setup:
+		obj = CLOSE;
+		break;
+	case HOTKEY_quit:
+		obj = SHUTDOWN;
+		break;
+	case HOTKEY_warmreboot:
+		obj = WARMREBOOT;
+		break;
+	case HOTKEY_coldreboot:
+		obj = COLDREBOOT;
+		break;
+	case HOTKEY_fullscreen:
+		obj = FULLSCREEN;
+		break;
+	case HOTKEY_screenshot:
+		obj = SCREENSHOT;
+		break;
+	case HOTKEY_sound:
+		break;
+	}
+	if (obj >= 0)
+	{
+		dlg[obj].state ^= SG_SELECTED;
+		SDLGui_DrawObject(dlg, obj);
+		SDLGui_RefreshObj(dlg, obj);
+		if (dlg[obj].flags & (SG_EXIT | SG_TOUCHEXIT)) {
+			return_obj = obj;
+		}
+	}
+}
+
 DlgMain *DlgMainOpen(void)
 {
 	return new DlgMain(maindlg);
 }
-
-/*
-vim:ts=4:sw=4:
-*/

@@ -73,7 +73,10 @@
 /
 /---------------------------------------------------------------------*/
 
+#include "sysdeps.h"
 #include "cfgopts.h"
+
+#define DEBUG 0
 #include "debug.h"
 
 ConfigOptions::ConfigOptions(const char *cfgfile, const char *home, const char *data)
@@ -184,19 +187,19 @@ long ConfigOptions::fcopy(const char *dest, const char *source)
 
 	s = fopen(source, "rb");
 	if (s == NULL)
-		return - 1L;
+		return -1L;
 
 	d = fopen(dest, "wb");
 	if (d == NULL) {
 		fclose(s);
-		return - 1L;
+		return -1L;
 	}
 
 	buffer = (char *)malloc(BUFFER_SIZE);
 	if (buffer == NULL) {
 		fclose(s);
 		fclose(d);
-		return - 1L;
+		return -1L;
 	}
 
 	incount = fread(buffer, sizeof(char), BUFFER_SIZE, s);
@@ -300,6 +303,228 @@ void ConfigOptions::compress_path(char *dest, char *path, unsigned short buf_siz
 }
 
 
+bool ConfigOptions::set_config_value(struct Config_Tag *ptr, const char *value)
+{
+	int temp;
+	
+	if (value == NULL) {
+		if ( ptr->type == Path_Tag ||
+		     ptr->type == String_Tag ) {/* path or string may be empty */
+			*(char *)ptr->buf = 0;
+			return true;
+		}
+		return false;
+	}
+	switch ( ptr->type )	 /* check type */ {
+	case Bool_Tag:
+		*((bool * )(ptr->buf)) = (!strcasecmp(value, "FALSE") || !strcasecmp(value, "No")) ? false : true;
+		break;
+
+	case Byte_Tag:
+		sscanf(value, "%d", &temp);
+		*((char *)(ptr->buf)) = (char)temp;
+		break;
+
+	case Word_Tag:
+		sscanf(value, "%hd", (short *)(ptr->buf));
+		break;
+
+	case Int_Tag:
+		sscanf(value, "%d", (int *)(ptr->buf));
+		break;
+
+	case Long_Tag:
+		sscanf(value, "%ld", (long *)(ptr->buf));
+		break;
+
+	case OctWord_Tag:
+		sscanf(value, "%ho", (short *)(ptr->buf));
+		break;
+
+	case OctLong_Tag:
+		sscanf(value, "%lo", (long *)(ptr->buf));
+		break;
+
+	case HexWord_Tag:
+		sscanf(value, "%hx", (short *)(ptr->buf));
+		break;
+
+	case HexLong_Tag:
+		sscanf(value, "%lx", (long *)(ptr->buf));
+		break;
+
+	case Float_Tag:
+		sscanf(value, "%g", (float *)ptr->buf);
+		break;
+
+	case Double_Tag:
+		sscanf(value, "%lg", (double *)ptr->buf);
+		break;
+
+	case Char_Tag:
+		*(char *)ptr->buf = *value;
+		break;
+
+	case Path_Tag:
+		if (ptr->buf_size > 0) {
+			char tmpbuf[MAX_PATH];
+			safe_strncpy(tmpbuf, value, sizeof(tmpbuf));
+			expand_path((char *)ptr->buf, tmpbuf, ptr->buf_size);
+		}
+		else {
+			panicbug(">>> Wrong buf_size in Config_Tag struct: directive %s, buf_size %d !!!", ptr->code, ptr->buf_size);
+		}
+		break;
+
+	case String_Tag:
+		if (ptr->buf_size > 0) {
+			safe_strncpy((char *)ptr->buf, value, ptr->buf_size);
+		}
+		else {
+			panicbug(">>> Wrong buf_size in Config_Tag struct: directive %s, buf_size %d !!!", ptr->code, ptr->buf_size);
+		}
+		break;
+	case Function_Tag:
+	case Error_Tag:
+	default:
+		return false;
+	}
+	return true;
+}
+
+
+char *ConfigOptions::get_config_value(const struct Config_Tag *ptr, bool type)
+{
+	char value[40];
+	char *valuep = NULL;
+	
+	switch ( ptr->type ) {
+	case Bool_Tag:
+		if (type)
+			strcpy(value, "bool");
+		else
+			strcpy(value, *((bool * )(ptr->buf)) ? "true" : "false");
+		break;
+
+	case Byte_Tag:
+		if (type)
+			strcpy(value, "byte");
+		else
+			sprintf(value, "%d", *((char *)(ptr->buf)));
+		break;
+
+	case Word_Tag:
+		if (type)
+			strcpy(value, "word");
+		else
+			sprintf(value, "%d", *((short *)(ptr->buf)));
+		break;
+
+	case Int_Tag:
+		if (type)
+			strcpy(value, "int");
+		else
+			sprintf(value, "%d", *((int *)(ptr->buf)));
+		break;
+
+	case Long_Tag:
+		if (type)
+			strcpy(value, "long");
+		else
+			sprintf(value, "%ld", *((long *)(ptr->buf)));
+		break;
+
+	case OctWord_Tag:
+		if (type)
+			strcpy(value, "octword");
+		else
+			sprintf(value, "%o", *((short *)(ptr->buf)));
+		break;
+
+	case OctLong_Tag:
+		if (type)
+			strcpy(value, "octlong");
+		else
+			sprintf(value, "%lo", *((long *)(ptr->buf)));
+		break;
+
+	case HexWord_Tag:
+		if (type)
+			strcpy(value, "hexword");
+		else
+			sprintf(value, "%x", *((short *)(ptr->buf)));
+		break;
+
+	case HexLong_Tag:
+		if (type)
+			strcpy(value, "hexlong");
+		else
+			sprintf(value, "%lx", *((long *)(ptr->buf)));
+		break;
+
+	case Float_Tag:
+		if (type)
+			strcpy(value, "float");
+		else
+			sprintf(value, "%g", *((float *)(ptr->buf)));
+		break;
+
+	case Double_Tag:
+		if (type)
+			strcpy(value, "double");
+		else
+			sprintf(value, "%g", *((double *)(ptr->buf)));
+		break;
+
+	case Char_Tag:
+		if (type)
+			strcpy(value, "char");
+		else
+			sprintf(value, "%c", *((char *)(ptr->buf)));
+		break;
+
+	case Path_Tag:
+		if (ptr->buf_size > 0) {
+			char tmpbuf[MAX_PATH];
+			if (type)
+			{
+				strcpy(value, "path");
+			} else
+			{
+				compress_path(tmpbuf, (char *)ptr->buf, sizeof(tmpbuf));
+				valuep = strdup(tmpbuf);
+			}
+		}
+		else {
+			panicbug(">>> Wrong buf_size in Config_Tag struct: directive %s, buf_size %d !!!", ptr->code, ptr->buf_size);
+		}
+		break;
+
+	case String_Tag:
+		if (ptr->buf_size > 0) {
+			if (type)
+			{
+				strcpy(value, "string");
+			} else
+			{
+				valuep = strdup((char *)ptr->buf);
+			}
+		}
+		else {
+			panicbug(">>> Wrong buf_size in Config_Tag struct: directive %s, buf_size %d !!!", ptr->code, ptr->buf_size);
+		}
+		break;
+	case Function_Tag:
+	case Error_Tag:
+	default:
+		return NULL;
+	}
+	if (valuep == NULL)
+		valuep = strdup(value);
+	return valuep;
+}
+
+
 /*---------------------------------------------------------------------/
 /	reads from an input configuration (INI) file.
 /---------------------------------------------------------------------*/
@@ -313,7 +538,7 @@ void ConfigOptions::compress_path(char *dest, char *path, unsigned short buf_siz
 int	ConfigOptions::input_config(struct Config_Tag configs[], const char *header)
 {
 	struct Config_Tag *ptr;
-	int	count = 0, lineno = 0, temp;
+	int	count = 0, lineno = 0;
 	FILE * file;
 	char	*fptr, *tok, *next;
 
@@ -339,114 +564,43 @@ int	ConfigOptions::input_config(struct Config_Tag configs[], const char *header)
 			tok = trim(strtok(line, "=\n\r"));	 /* get first token */
 			if ( tok != NULL ) {
 				next = trim(strtok(NULL, "\n\r")); /* get actual config information */
-				for ( ptr = configs; ptr->buf; ++ptr )	 /* scan for token */ {
+				for ( ptr = configs; ptr->code; ++ptr )	 /* scan for token */ {
 					if ( !strcasecmp( tok , ptr->code ) )  /* got a match? */ {
-						if (next == NULL) {
-							if ( ptr->type == Path_Tag ||
-							     ptr->type == String_Tag ) {/* path or string may be empty */
-								*(char *)ptr->buf = 0;
-								++count;
-							}
-							else {
+						if (!set_config_value(ptr, next))
+						{
+							if (next == NULL)
 								panicbug(">>> Missing value in Config file %s on line %d !!!", config_file, lineno);
-							}
-							continue;
-						}
-						switch ( ptr->type )	 /* check type */ {
-						case Bool_Tag:
-							*((bool * )(ptr->buf)) = (!strcasecmp(next, "FALSE") || !strcasecmp(next, "No")) ? false : true;
+							else
+								bug("Error in Config file %s on line %d", config_file, lineno);
+						} else
+						{
 							++count;
-							break;
-
-						case Byte_Tag:
-							sscanf(next, "%d", &temp);
-							*((char *)(ptr->buf)) = (char)temp;
-							++count;
-							break;
-
-						case Word_Tag:
-							sscanf(next, "%hd", (short *)(ptr->buf));
-							++count;
-							break;
-
-						case Int_Tag:
-							sscanf(next, "%d", (int *)(ptr->buf));
-							++count;
-							break;
-
-						case Long_Tag:
-							sscanf(next, "%ld", (long *)(ptr->buf));
-							++count;
-							break;
-
-						case OctWord_Tag:
-							sscanf(next, "%ho", (short *)(ptr->buf));
-							++count;
-							break;
-
-						case OctLong_Tag:
-							sscanf(next, "%lo", (long *)(ptr->buf));
-							++count;
-							break;
-
-						case HexWord_Tag:
-							sscanf(next, "%hx", (short *)(ptr->buf));
-							++count;
-							break;
-
-						case HexLong_Tag:
-							sscanf(next, "%lx", (long *)(ptr->buf));
-							++count;
-							break;
-
-						case Float_Tag:
-							sscanf(next, "%g", (float *)ptr->buf);
-							++count;
-							break;
-
-						case Double_Tag:
-							sscanf(next, "%lg", (double *)ptr->buf);
-							++count;
-							break;
-
-						case Char_Tag:
-							*(char *)ptr->buf = *next;
-							++count;
-							break;
-
-						case Path_Tag:
-							if (ptr->buf_size > 0) {
-								char tmpbuf[MAX_PATH];
-								safe_strncpy(tmpbuf, next, sizeof(tmpbuf));
-								expand_path((char *)ptr->buf, tmpbuf, ptr->buf_size);
-								++count;
-							}
-							else {
-								panicbug(">>> Wrong buf_size in Config_Tag struct: directive %s, buf_size %d !!!", ptr->code, ptr->buf_size);
-							}
-							break;
-
-						case String_Tag:
-							if (ptr->buf_size > 0) {
-								safe_strncpy((char *)ptr->buf, next, ptr->buf_size);
-								++count;
-							}
-							else {
-								panicbug(">>> Wrong buf_size in Config_Tag struct: directive %s, buf_size %d !!!", ptr->code, ptr->buf_size);
-							}
-							break;
-						case Function_Tag:
-						case Error_Tag:
-						default:
-							printf("Error in Config file %s on line %d\n",
-								config_file, lineno);
-							break;
 						}
 					}
 				}
 			}
 		} while ( fptr != NULL && line[0] != '[');
 	fclose(file);
+
+	/*
+	 * expand_path() (for converting the relative filenames)
+	 * will not be called when the entry is not found in the config file,
+	 * so go through the list again and do that now.
+	 */
+	for ( ptr = configs; ptr->code; ++ptr)
+	{
+		if (ptr->type == Path_Tag)
+		{
+			char *path = (char *)ptr->buf;
+			if (path[0] != '\0' && path[0] != '/' && path[0] != '\\' && path[1] != ':' )
+			{
+				char tmpbuf[MAX_PATH];
+				safe_strncpy(tmpbuf, path, sizeof(tmpbuf));
+				expand_path(path, tmpbuf, ptr->buf_size);
+			}
+		}
+	}
+	
 	return count;
 }
 
@@ -556,28 +710,37 @@ bool ConfigOptions::write_token(FILE *outfile, struct Config_Tag *ptr)
 /-------------------------------------------------------------------<<*/
 int	ConfigOptions::update_config(struct Config_Tag configs[], const char *header)
 {
-#ifdef OS_darwin
-	static const char *tempfilename = "/tmp/aratemp.$$$";
-#else
-	static const char *tempfilename = "temp.$$$";
-#endif
+	static const char *const tempfilenames[] = {
+		"/tmp/aratemp.$$$",
+		"aratemp.$$$",
+		NULL
+	};
+	const char *tempfilename;
 	struct Config_Tag *ptr;
 	int	count = 0, lineno = 0;
 	FILE * infile, *outfile;
 	char	*fptr, *tok;
 	int result = 0;
-
+	int i;
+	
 	for ( ptr = configs; ptr->buf; ++ptr )
 		ptr->stat = 0;	/* jeste neulozeno do souboru */
 
-	infile = fopen(config_file, "rt");
+	outfile = NULL;
+	i = 0;
+	while ((tempfilename = tempfilenames[i++]) != NULL)
+	{
+		outfile = fopen(tempfilename, "w");
+		if (outfile != NULL)
+			break;
+	}
+	if ( outfile == NULL ) {
+		panicbug("Error: unable to open %s file.", tempfilenames[0]);
+		return ERROR;		/* return error designation. */
+	}
+	infile = fopen(config_file, "r");
 	if ( infile == NULL ) {
 /* konfiguracni soubor jeste vubec neexistuje */
-		outfile = fopen(tempfilename, "wt");
-		if ( outfile == NULL ) {
-			panicbug("Error: unable to open %s file.", tempfilename);
-			return ERROR;		/* return error designation. */
-		}
 		if ( header != NULL ) {
 			fprintf(outfile, "%s\n", header);
 		}
@@ -588,19 +751,13 @@ int	ConfigOptions::update_config(struct Config_Tag configs[], const char *header
 
 		fclose(outfile);
 		result = fcopy(config_file, tempfilename);
-		remove(tempfilename);
+		os_remove(tempfilename);
 
 		if (result < 0) {
 			panicbug("Error %d in fcopy.", result);
 			return result;
 		}
 		return count;
-	}
-	outfile = fopen(tempfilename, "wt");
-	if ( outfile == NULL ) {
-		panicbug("Error: unable to open %s file.", tempfilename);
-		fclose(infile);
-		return ERROR;		   /* return error designation. */
 	}
 	if ( header != NULL ) {
 /* konfiguracni soubor existuje a je otevren - hledame nasi sekci */
@@ -673,7 +830,7 @@ int	ConfigOptions::update_config(struct Config_Tag configs[], const char *header
 	fclose(infile);
 	fclose(outfile);
 	result = fcopy(config_file, tempfilename);
-	remove(tempfilename);
+	os_remove(tempfilename);
 
 	if (result < 0) {
 		panicbug("Error %d in fcopy(%s,%s).", result, config_file, 

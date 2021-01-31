@@ -19,16 +19,9 @@
 #ifndef VERSION_H
 #define VERSION_H
 
-#include "version_date.h"
-#ifdef VERSION_DATE
-#define CVS_DATE	"git " VERSION_DATE
-#else
-#define CVS_DATE	"git"
-#endif
-
 #define VER_MAJOR	1
-#define VER_MINOR	0
-#define VER_MICRO	2
+#define VER_MINOR	1
+#define VER_MICRO	0
 
 #ifndef VER_STATUS
 #define VER_STATUS
@@ -38,11 +31,9 @@
 //#define VER_STATUS	"beta+" CVS_DATE
 #endif
 
-#define str(x)		_stringify (x)
-#define _stringify(x)	#x
-
 #define NAME_STRING "ARAnyM"
 
-#define VERSION_STRING	NAME_STRING " " str (VER_MAJOR) "." str (VER_MINOR) "." str (VER_MICRO) VER_STATUS 
+extern char const name_string[];
+extern char const version_string[];
 
 #endif

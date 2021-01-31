@@ -28,7 +28,7 @@
 
 #include "sysdeps.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #define DEBUG 0
 #include "debug.h"
 
@@ -274,7 +274,37 @@ static char replybuf[MSG_SIZE];
 static sigsegv_return_t sigsegv_handler(sigsegv_address_t fault_address,
 										sigsegv_address_t /* fault_instruction */,
 										 SIGSEGV_THREAD_STATE_TYPE *state) {
-	handle_access_fault((CONTEXT_ATYPE) CONTEXT_NAME, (memptr)(uintptr)((char *)fault_address - FMEMORY));
+	memptr addr = (memptr)(uintptr)((char *)fault_address - fixed_memory_offset);
+#if DEBUG
+	if (addr >= 0xff000000)
+		addr &= 0x00ffffff;
+	if (addr < 0x00f00000 || addr > 0x00ffffff) // YYY
+		bug("\nsegfault: pc=%08x, " REG_RIP_NAME " =%p, addr=%p (0x%08x)", m68k_getpc(), (void *)CONTEXT_AEIP, fault_address, addr);
+	if (fault_address < (uintptr)(fixed_memory_offset - 0x1000000UL)
+#ifdef CPU_x86_64
+		|| fault_address >= ((uintptr)fixed_memory_offset + 0x100000000UL)
+#endif
+		)
+	{
+#ifdef HAVE_DISASM_X86
+		if (CONTEXT_AEIP != 0)
+		{
+			char buf[256];
+			
+			x86_disasm((const uint8 *)CONTEXT_AEIP, buf, 1);
+			panicbug("%s", buf);
+		}
+#endif
+		// raise(SIGBUS);
+	}
+#endif
+	if (fault_address == 0 || CONTEXT_AEIP == 0)
+	{
+		real_segmentationfault();
+		/* not reached (hopefully) */
+		return SIGSEGV_RETURN_FAILURE;
+	}
+	handle_access_fault((CONTEXT_ATYPE) CONTEXT_NAME, addr);
 	return SIGSEGV_RETURN_SUCCESS;
 }
 										 

@@ -14,7 +14,7 @@
  *   we can think of. For this reason, rather bloated.
  *   The problem with this is if the systems default
  *   library doesn't contain support for 68k, you have to compile one yourself,
- *   and install it in a non-default place, or it clashes with the system libary.
+ *   and install it in a non-default place, or it clashes with the system library.
  */
 
 #if defined(MAIN) && !defined(DISASM_USE_BUILTIN) && !defined(DISASM_USE_OPCODES)
@@ -22,15 +22,15 @@
 #endif
 
 #if defined(DISASM_USE_BUILTIN) || defined(DISASM_USE_OPCODES)
-#  define HAVE_DISASM
+#  define HAVE_DISASM_M68K
 #else
-#  undef HAVE_DISASM
+#  undef HAVE_DISASM_M68K
 #endif
 #if (defined(DISASM_USE_BUILTIN) + defined(DISASM_USE_OPCODES)) > 1
   #error only one disassembler may be defined
 #endif
 
-#ifdef HAVE_DISASM
+#ifdef HAVE_DISASM_M68K
 
 enum m68k_cpu {
 	CPU_AUTO,
@@ -92,6 +92,8 @@ typedef struct _m68k_disasm_info {
 	enum m68k_fpu fpu;
 	enum m68k_mmu mmu;
 	
+	int is_64bit;
+
 	memptr memory_vma;
 	uae_u32 reloffset;
 	
@@ -137,7 +139,7 @@ extern m68k_disasm_info disasm_info;
 void m68k_disasm_init(m68k_disasm_info *info, enum m68k_cpu cpu);
 void m68k_disasm_exit(m68k_disasm_info *info);
 int m68k_disasm_insn(m68k_disasm_info *info);
-int m68k_disasm_to_buf(m68k_disasm_info *info, char *buf);
+int m68k_disasm_to_buf(m68k_disasm_info *info, char *buf, int allbytes);
 
 memptr gdb_dis(memptr start, unsigned int count);
 void gdb_regs(void);
@@ -145,10 +147,34 @@ memptr gdb_pc(void);
 
 #ifdef DISASM_USE_BUILTIN
 
-int disasm_builtin(m68k_disasm_info *info);
+int m68k_disasm_builtin(m68k_disasm_info *info);
 
 #endif
 
-#endif /* HAVE_DISASM */
+#endif /* HAVE_DISASM_M68K */
+
+#if (defined(DISASM_USE_BUILTIN) || defined(DISASM_USE_OPCODES)) && (defined(CPU_i386) || defined(CPU_x86_64))
+
+#define HAVE_DISASM_X86 1
+
+const uint8 *x86_disasm(const uint8 *ainstr, char *buf, int allbytes);
+
+#endif
+
+#if defined(DISASM_USE_OPCODES) && (defined(CPU_powerpc))
+
+#define HAVE_DISASM_PPC 1
+
+const uint8 *ppc_disasm(const uint8 *ainstr, char *buf, int allbytes);
+
+#endif
+
+#if (defined(DISASM_USE_BUILTIN) || defined(DISASM_USE_OPCODES)) && (defined(CPU_arm))
+
+#define HAVE_DISASM_ARM 1
+
+const uint8 *arm_disasm(const uint8 *ainstr, char *buf, int allbytes);
+
+#endif
 
 #endif /* __DISASM_GLUE_H__ */

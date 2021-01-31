@@ -21,6 +21,9 @@
 #include "sysdeps.h"
 #include "cpu_emulation.h"
 #include "parameters.h"
+
+#ifdef NFCDROM_LINUX_SUPPORT
+
 #include "nfcdrom.h"
 #include "nfcdrom_atari.h"
 #include "nfcdrom_linux.h"
@@ -241,6 +244,15 @@ CdromDriverLinux::~CdromDriverLinux()
 		cddrives[i].device = NULL;
 	}
 	drives_scanned = false;
+}
+
+int CdromDriverLinux::Count()
+{
+	if (!drives_scanned)
+	{
+		(void) DeviceName(0);
+	}
+	return numcds;
 }
 
 const char *CdromDriverLinux::DeviceName(int drive)
@@ -964,3 +976,5 @@ int32 CdromDriverLinux::cd_discinfo(memptr device, memptr buffer)
 /*
 vim:ts=4:sw=4:
 */
+
+#endif /* NFCDROM_LINUX_SUPPORT */

@@ -1,6 +1,4 @@
 /*
- * $Header$
- *
  * 2001-2003 STanda
  *
  * This is a part of the ARAnyM project sources.
@@ -22,29 +20,34 @@
 #ifndef _global_h_
 #define _global_h_
 
-#ifdef ARAnyM_MetaDOS
-
-#include "filesys.h"
-
-#include "mint/stat.h"
-#include "mint/kerinfo.h"
-
-extern struct kerinfo *KERNEL;
+extern long _cdecl (*nf_call)(long id, ...);
 
 /* console output via Cconws */
 #include "mint/osbind.h"
-#define c_conws Cconws
+#define c_conws (void) Cconws
+
+#define MSG_VERSION	str (HOSTFS_XFS_VERSION) "." str (HOSTFS_NFAPI_VERSION) VER_ALPHABETA
+#define MSG_BUILDDATE	__DATE__
+
+#define MSG_BOOT       \
+    "\033p HostFS Filesystem driver version " MSG_VERSION " \033q\r\n"
+
+#define MSG_GREET	\
+    "½ " MSG_BUILDDATE " by ARAnyM Team\r\n"
+
+# define MSG_ALPHA      \
+    "\033p WARNING: This is an unstable version - ALPHA! \033q\7\r\n"
+
+# define MSG_BETA       \
+    "\033p WARNING: This is a test version - BETA! \033q\7\r\n"
 
 #define MSG_PFAILURE(p,s) \
     "\7Sorry, hostfs.dos NOT installed: " s "!\r\n"
-
-#endif /* ARAnyM_MetaDOS */
 
 #endif /* _global_h_ */
 
 
 /*
- * $Log$
  * Revision 1.2  2006/02/06 20:58:17  standa
  * Sync with the FreeMiNT CVS. The make.sh now only builds the BetaDOS
  * hostfs.dos.

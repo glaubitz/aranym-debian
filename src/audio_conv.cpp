@@ -18,10 +18,14 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include "sysdeps.h"
 #include "audio_conv.h"
+#include "host_audio.h"
 
 #define DEBUG 0
 #include "debug.h"
+
+#define USE_SDL_RATECONVERSION 0
 
 AudioConv::AudioConv(void)
 	: tmpBuf(NULL), srcRate(0), srcChan(0), srcOffset(0), srcSkip(0),
@@ -31,7 +35,7 @@ AudioConv::AudioConv(void)
 
 AudioConv::~AudioConv()
 {
-	if (!tmpBuf) {
+	if (tmpBuf) {
 		free(tmpBuf);
 		tmpBuf=NULL;
 	}
@@ -44,9 +48,15 @@ AudioConv::~AudioConv()
 void AudioConv::setConversion(Uint16 src_fmt, Uint8 src_chan, int src_rate, int src_offset, int src_skip,
 	Uint16 dst_fmt, Uint8 dst_chan, int dst_rate)
 {
+#if SDL_VERSION_ATLEAST(2, 0, 0) && USE_SDL_RATECONVERSION
+	SDL_BuildAudioCVT(&cvt,
+		src_fmt, src_chan, src_rate,
+		dst_fmt, dst_chan, dst_rate);
+#else
 	SDL_BuildAudioCVT(&cvt,
 		src_fmt, src_chan, dst_rate,
 		dst_fmt, dst_chan, dst_rate);
+#endif
 
 	srcRate = src_rate;
 	srcOffset = src_offset;
@@ -54,9 +64,9 @@ void AudioConv::setConversion(Uint16 src_fmt, Uint8 src_chan, int src_rate, int 
 	srcChan = src_chan;
 	dstRate = dst_rate;
 
-	D(bug("audio_conv: 0x%04x, %d chans, %d Hz to 0x%04x, %d chans, %d Hz",
-		src_fmt, src_chan, src_rate,
-		dst_fmt, dst_chan, dst_rate));
+	D(bug("audio_conv: %s, %d chans, %d Hz to %s, %d chans, %d Hz",
+		HostAudio::FormatName(src_fmt), src_chan, src_rate,
+		HostAudio::FormatName(dst_fmt), dst_chan, dst_rate));
 	D(bug("audio_conv: offset %d bytes, skip %d bytes in source", src_offset, src_skip));
 }
 
@@ -69,13 +79,13 @@ int AudioConv::rescaleFreq8(Uint8 *source, int *src_len, Uint8 *dest, int dst_le
 		switch(srcChan) {
 			case 2:
 				dest[dstBytesWritten++] = source[srcBytesRead++];
-				/* break; */
+				/* fall through */
 			case 1:
 				dest[dstBytesWritten++] = source[srcBytesRead];
 				break;
 		}
 
-		srcSamplesRead = (dstSamplesWritten++ * srcRate) / dstRate;
+		srcSamplesRead = (++dstSamplesWritten * srcRate) / dstRate;
 		srcBytesRead = srcSamplesRead*srcSkip+srcOffset;
 	}
 
@@ -96,13 +106,13 @@ int AudioConv::rescaleFreq16(Uint16 *source, int *src_len, Uint16 *dest, int dst
 		switch(srcChan) {
 			case 2:
 				dest[dstWordsWritten++] = source[srcWordsRead++];
-				/* break; */
+				/* fall through */
 			case 1:
 				dest[dstWordsWritten++] = source[srcWordsRead];
 				break;
 		}
 
-		srcSamplesRead = (dstSamplesWritten++ * srcRate) / dstRate;
+		srcSamplesRead = (++dstSamplesWritten * srcRate) / dstRate;
 		srcWordsRead = srcSamplesRead*curSkip+curOffset;
 	}
 
@@ -120,8 +130,24 @@ void AudioConv::doConversion(Uint8 *source, int *src_len, Uint8 *dest, int *dst_
 		return;
 	}
 
-	D(bug("audioconv: from 0x%08x, %d -> 0x%08x, %d", source, *src_len, dest, *dst_len));
+	D(bug("audioconv: from %p, %d -> %p, %d", source, *src_len, dest, *dst_len));
 
+#if SDL_VERSION_ATLEAST(2, 0, 0) && USE_SDL_RATECONVERSION
+	/* Calc needed buffer size */
+	int neededBufSize = *src_len * cvt.len_mult;
+
+	if (tmpBufLen<neededBufSize) {
+		tmpBuf = (Uint8 *) realloc(tmpBuf, neededBufSize);
+		tmpBufLen = neededBufSize;
+		D(bug("audioconv: realloc tmpbuf, len: %d", neededBufSize));
+	}
+
+	/* Then convert to final format */
+	memcpy(tmpBuf, source, *src_len);
+	cvt.buf = tmpBuf;
+	cvt.len = *src_len;
+	SDL_ConvertAudio(&cvt);
+#else
 	/* Calc needed buffer size */
 	int neededBufSize = *dst_len;
 	if (srcRate > dstRate) {
@@ -137,17 +163,18 @@ void AudioConv::doConversion(Uint8 *source, int *src_len, Uint8 *dest, int *dst_
 	/* First convert according to freq rates in a temp buffer */
 	int dstConvertedLen = 0;
 
-	neededBufSize = (int) (*dst_len / cvt.len_ratio);
+	int tmpLen = (int) (*dst_len / cvt.len_ratio);
+	neededBufSize = tmpLen * cvt.len_mult;
 	if (neededBufSize>tmpBufLen) {
 		neededBufSize = tmpBufLen;
 	}
 
 	switch(cvt.src_format & 0xff) {
 		case 8:
-			dstConvertedLen = rescaleFreq8(source, src_len, tmpBuf, neededBufSize);
+			dstConvertedLen = rescaleFreq8(source, src_len, tmpBuf, tmpLen);
 			break;
 		case 16:
-			dstConvertedLen = rescaleFreq16((Uint16 *) source, src_len, (Uint16 *) tmpBuf, neededBufSize);
+			dstConvertedLen = rescaleFreq16((Uint16 *) source, src_len, (Uint16 *) tmpBuf, tmpLen);
 			break;
 	}
 
@@ -155,13 +182,14 @@ void AudioConv::doConversion(Uint8 *source, int *src_len, Uint8 *dest, int *dst_
 	cvt.buf = tmpBuf;
 	cvt.len = dstConvertedLen;
 	SDL_ConvertAudio(&cvt);
+#endif
 
 	SDL_MixAudio(dest, cvt.buf, cvt.len_cvt, volume);
 
 	/* Set converted length */
 	*dst_len = cvt.len_cvt;
 
-	D(bug("audioconv: to 0x%08x, %d -> 0x%08x, %d", source, *src_len, dest, *dst_len));
+	D(bug("audioconv: to %p, %d -> %p, %d", source, *src_len, dest, *dst_len));
 }
 
 void AudioConv::setVolume(int newVolume)

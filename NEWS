@@ -1,3 +1,49 @@
+2019/04/14 - version 1.1.0 released
+==========
+
+ List of changes in this release is 60 pages long! No wonder as it's been
+ four and half years since previous release, and the development never
+ stopped, mainly thanks to Thorsten. See the 'ChangeLog' file for details.
+
+ Tons of things have been fixed in all areas of the ARAnyM, and lots of
+ new features have been added. Following list is incomplete but still gives
+ you a good overview:
+
+ Notable changes:
+ ----------------
+ * ARAnyM is hosted by GitHub.com at https://aranym.github.io/
+ * there are automated builds for x86/amd64, armhf and macOS
+ * added hotkey for turning audio on/off
+ * HostFS MiNT file locking implemented
+ * nfosmesa updated to OpenGL 4.6
+ * MetaDOS driver improved
+ * hotkeys work in the Setup GUI dialog as well
+ * configurable directory for screenshots (via Setup GUI)
+ * on macOS the configuration file is now looked up first
+   in ~/Documents/Aranym_files (if it does not exist yet)
+ * displaying non-ASCII characters in the fileselector
+   should work now
+ * path of loaded TOS/EmuTOS can now be selected in the Setup GUI
+ * JIT CPU compiler now supports Solaris
+ * JIT CPU compiler now supports more 64bit hosts (like kfreebsd)
+
+ New features:
+ -------------
+ * NatFeat SCSI driver for Linux
+ * NatFeat host exec
+ * NatFeat for query/set CPU JIT
+ * NatFeat for ARAnyM exit
+ * new command line option --option
+   that can set any value from the config file
+ * AppImage can now be built
+
+
+2014/10/17 - version 1.0.2 released
+==========
+
+ o typo error hopefully fixed
+
+
 2014/10/17 - version 1.0.1 released
 ==========
 
@@ -133,7 +179,7 @@ by many dedicated programmers (listed in the AUTHORS file). Thank you all!
      MMU builds (aranym-mmu). Hopefully Debian-m68k developers will enjoy it
      :-)
 
-   o USB NatFeat fully usable: http://wiki.aranym.org/manual#usb
+   o USB NatFeat fully usable: https://github.com/aranym/aranym/wiki/manual#usb
      With a FreeMiNT driver you can access your USB flash discs from
      the Atari side easily. First enter the SETUP GUI and plug in
      the desired USB device. The USB support is compiled in by default
@@ -174,7 +220,7 @@ by many dedicated programmers (listed in the AUTHORS file). Thank you all!
  GEM clipboard and the host one (MS Windows, Mac OS X and X Window System).
  It's currently implemented in FreeMiNT only and uses its aranym.xfs
  virtual filesystem (U:\host\clipbrd). Please see setup instructions
- in http://wiki.aranym.org/gem_clipbrd
+ in https://github.com/aranym/aranym/wiki/gem_clipbrd
 
  Also couple of important bugfixes:
 
@@ -380,7 +426,7 @@ by many dedicated programmers (listed in the AUTHORS file). Thank you all!
  o Host desktop <-> AES clipboard interconnection. Currently for MS-Windows
    only. You need a special FreeMiNT driver that creates a new filesystem
    in FreeMiNT where you can point the AES to store the Clipboard. Find
-   more information in documentation at http://wiki.aranym.org/
+   more information in documentation at https://github.com/aranym/aranym/wiki
 
  o various improvements in graphics area - major speed up for bitplane modes,
    speed up of graphics on Mac OS X, OpenGL alpha mask fix and others.
@@ -414,9 +460,9 @@ by many dedicated programmers (listed in the AUTHORS file). Thank you all!
 2006/02/20 - version 0.9.3beta released
 ==========
 
- Exciting news: ARAnyM now has its own domain (http://aranym.org) and also
+ Exciting news: ARAnyM now has its own domain (https://aranym.github.io/) and also
  brand new Wikiwiki for easier cooperation on improving ARAnyM documentation
- - visit http://wiki.aranym.org and look around...
+ - visit https://github.com/aranym/aranym/wiki and look around...
 
  This is not much polished release. I have intended it mainly as a checkpoint
  for both developers and users, to resync and continue developing further.
@@ -448,7 +494,7 @@ by many dedicated programmers (listed in the AUTHORS file). Thank you all!
 
  If upgrading from previous release you have to update the HostFS, NF VDI
  and also Ethernet drivers. We'll provide a ZIP archive with all necessary
- drivers. The impatient can get the Atari drivers at http://aranym.org/bin/
+ drivers. The impatient can get the Atari drivers at https://aranym.github.io//bin/
 
  
 2005/04/14 - version 0.9.0 released

@@ -43,10 +43,16 @@ struct M68kRegisters {
 	memptr pc;
 };
 
+#ifdef SDL_GUI
+extern bool isGuiAvailable;
+extern bool startupGUI;
+extern char *startupAlert;
+#endif
+
 // General functions
 extern bool InitAll(void);
 extern void ExitAll(void);
-extern void RestartAll(void);
+extern void RestartAll(bool cold = false);
 
 extern void invoke200HzInterrupt(void);
 
@@ -57,6 +63,13 @@ extern void setactvdebug(int);
 #endif
 
 // Platform-specific functions
-extern void QuitEmulator(void);				// Quit emulator
+extern void QuitEmulator(int exitcode = EXIT_FAILURE);				// Quit emulator
+
+#if FIXED_ADDRESSING
+bool allocate_all_memory(uintptr fmemory, bool quiet);
+#else
+bool allocate_all_memory(bool quiet);
+#endif
+void release_all_memory(void);
 
 #endif

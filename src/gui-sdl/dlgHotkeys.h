@@ -33,11 +33,13 @@ class DlgHotkeys: public Dialog
 			STATE_MAIN,
 			STATE_SETUP,
 			STATE_QUIT,
-			STATE_REBOOT,
+			STATE_WARMREBOOT,
+			STATE_COLDREBOOT,
 			STATE_UNGRAB,
 			STATE_DEBUG,
 			STATE_SCREENSHOT,
-			STATE_FULLSCREEN
+			STATE_FULLSCREEN,
+			STATE_SOUND
 		};
 
 		bx_hotkeys_t hotkeys;

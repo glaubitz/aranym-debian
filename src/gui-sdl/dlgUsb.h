@@ -1,7 +1,7 @@
 /*
  * dlgUsb.h - USB selection dialog
  *
- * Copyright (c) 2012 David Galvez. ARAnyM development team (see AUTHORS).
+ * Copyright (c) 2012-2015 David Galvez. ARAnyM development team (see AUTHORS).
  *
  * This file is part of the ARAnyM project which builds a new and powerful
  * TOS/FreeMiNT compatible virtual machine running on almost any hardware.
@@ -24,16 +24,13 @@
 #ifndef DLGUSB_H
 #define DLGUSB_H
 
-#define MAX_NUMBER_VIRT_DEV	9
+#define ENTRY_COUNT					9 /* (usb_description_8 - usb_description_0 + 1) */
 #define MAX_PRODUCT_LENGTH	32
 
 
 #include "dialog.h"
 #ifdef USBHOST_SUPPORT
 #include "../natfeat/usbhost.h"
-
-void enable_buttons(void);
-void disable_buttons(void);	
 
 class DlgAlert;
 #endif
@@ -46,11 +43,19 @@ class DlgUsb: public Dialog
 			STATE_ALERT,
 		};
 		int state;
+		int ypos;
+		bool refreshentries;
 
 		DlgAlert *dlgAlert;
 
 		void confirm(void);
- 
+		void reset_buttons_and_state(void);
+		void clean_product_strings(void);
+		int check_if_devices_connected(void);
+		void enable_buttons(void);
+		void disable_buttons(void);
+		void refreshEntries(void);
+
 	public:
 		DlgUsb(SGOBJ *dlg);
 		~DlgUsb();

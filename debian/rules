@@ -60,7 +60,7 @@ build-stamp:
 	([ ! -f Makefile ] || $(MAKE) distclean)
 	(./configure --build=$(DEB_BUILD_GNU_TYPE) --host=$(DEB_HOST_GNU_TYPE) --prefix=/usr --enable-fullmmu --enable-lilo ${CF_USB} && $(MAKE))
 	($(MAKE) install DESTDIR=`pwd`/debian/aranym-mmu )
-	cp `pwd`/debian/aranym-mmu/usr/bin/aranym `pwd`/debian/tmp/usr/bin/aranym-mmu
+	cp `pwd`/debian/aranym-mmu/usr/bin/aranym-mmu `pwd`/debian/tmp/usr/bin/aranym-mmu
 
 	cp `pwd`/debian/menu-other `pwd`/debian/menu
 
@@ -69,7 +69,7 @@ ifeq ($(JIT_ENABLED),1)
 	(./configure --build=$(DEB_BUILD_GNU_TYPE) --host=$(DEB_HOST_GNU_TYPE) --prefix=/usr --enable-jit-compiler ${CF_USB} && $(MAKE))
 	($(MAKE) install DESTDIR=`pwd`/debian/aranym-jit )
 
-	cp `pwd`/debian/aranym-jit/usr/bin/aranym `pwd`/debian/tmp/usr/bin/aranym-jit
+	cp `pwd`/debian/aranym-jit/usr/bin/aranym-jit `pwd`/debian/tmp/usr/bin/aranym-jit
 
 	cp `pwd`/debian/menu-i386 `pwd`/debian/menu
 endif

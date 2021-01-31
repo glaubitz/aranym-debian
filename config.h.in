@@ -369,6 +369,9 @@
 /* Define to 1 if you have the `pathconf' function. */
 #undef HAVE_PATHCONF
 
+/* Define to 1 if you have the `pow10' function. */
+#undef HAVE_POW10
+
 /* Define to 1 if you have the `pow10l' function. */
 #undef HAVE_POW10L
 

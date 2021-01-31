@@ -1,0 +1,68 @@
+From: Andreas Schwab <schwab@linux-m68k.org>
+Date: Sun, 31 Jan 2021 15:26:39 +0100
+Subject: Use pow10() only when it's available
+
+---
+ config.h.in               | 3 +++
+ configure                 | 2 +-
+ configure.ac              | 2 +-
+ src/uae_cpu/fpu/mathlib.h | 6 +++++-
+ 4 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/config.h.in b/config.h.in
+index df50d66..e5146b2 100644
+--- a/config.h.in
++++ b/config.h.in
+@@ -369,6 +369,9 @@
+ /* Define to 1 if you have the `pathconf' function. */
+ #undef HAVE_PATHCONF
+ 
++/* Define to 1 if you have the `pow10' function. */
++#undef HAVE_POW10
++
+ /* Define to 1 if you have the `pow10l' function. */
+ #undef HAVE_POW10L
+ 
+diff --git a/configure b/configure
+index 1024070..2c8e6b5 100755
+--- a/configure
++++ b/configure
+@@ -12488,7 +12488,7 @@ _ACEOF
+ fi
+ done
+ 
+-                        for ac_func in logl log10l expl powl exp2l pow2l exp10l pow10l fabsl sqrtl log1pl expm1l exp2 pow2
++                        for ac_func in logl log10l expl powl exp2l pow2l exp10l pow10l fabsl sqrtl log1pl expm1l exp2 pow2 pow10
+ do :
+   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
+ ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
+diff --git a/configure.ac b/configure.ac
+index 4c5fd67..b1cf1fa 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1486,7 +1486,7 @@ for fpe in $FPE_CORE_TEST_ORDER; do
+       dnl Math functions required by C99 standard, but probably not
+       dnl implemented everywhere. In that case, we fall back to the
+       dnl regular variant for doubles.
+-      AC_CHECK_FUNCS(logl log10l expl powl exp2l pow2l exp10l pow10l fabsl sqrtl log1pl expm1l exp2 pow2)
++      AC_CHECK_FUNCS(logl log10l expl powl exp2l pow2l exp10l pow10l fabsl sqrtl log1pl expm1l exp2 pow2 pow10)
+       AC_CHECK_FUNCS(sinl cosl tanl sinhl coshl tanhl)
+       AC_CHECK_FUNCS(asinl acosl atanl asinhl acoshl atanhl)
+       AC_CHECK_FUNCS(floorl ceill truncl roundl)
+diff --git a/src/uae_cpu/fpu/mathlib.h b/src/uae_cpu/fpu/mathlib.h
+index c920503..26e47ff 100644
+--- a/src/uae_cpu/fpu/mathlib.h
++++ b/src/uae_cpu/fpu/mathlib.h
+@@ -756,7 +756,11 @@ PRIVATE inline uae_u32 FFPU get_quotient_sign(fpu_register const & ra, fpu_regis
+ # define fp_pow		pow
+ #endif
+ #ifndef fp_pow10
+-# define fp_pow10	pow10
++# ifdef HAVE_POW10
++#   define fp_pow10	pow10
++# else
++#   define fp_pow10	exp10
++# endif
+ #endif
+ #ifndef fp_pow2
+ # ifdef HAVE_POW2

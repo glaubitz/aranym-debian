@@ -1,3 +1,18 @@
+aranym (1.1.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Set myself as maintainer in debian/control (Closes: #981180)
+  * Drop all patches merged upstream
+  * Fix source file names for aranym-mmu and aranym-jit in debian/rules
+  * Drop dh_autotools-dev_updateconfig from debian/rules
+  * Update debhelper version to 12 and switch to debhelper-compat
+  * Update Homepage field in debian/control
+  * Add Vcs-* fields to debian/control
+  * Update Standards-Version to 4.5.1 in debian/control
+  * Run wrap-and-sort to clean up files in debian directory
+
+ -- John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>  Sun, 31 Jan 2021 12:57:59 +0100
+
 aranym (1.0.2-2.2) unstable; urgency=medium
 
   * Non-maintainer upload.

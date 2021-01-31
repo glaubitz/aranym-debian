@@ -51,7 +51,6 @@ build-arch: build-stamp
 build-indep: build-stamp
 build-stamp:
 	dh_testdir
-	dh_autotools-dev_updateconfig
 
 	([ ! -f Makefile ] || $(MAKE) distclean)
 	(./configure --build=$(DEB_BUILD_GNU_TYPE) --host=$(DEB_HOST_GNU_TYPE) --prefix=/usr ${CF_USB} && $(MAKE))
@@ -88,7 +87,6 @@ clean:
 
 	([ ! -f Makefile ] || $(MAKE) distclean)
 
-	dh_autotools-dev_restoreconfig
 	dh_clean
 
 install: build

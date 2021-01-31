@@ -6,12 +6,21 @@ Homepage: https://aranym.github.io
 Vcs-Browser: https://salsa.debian.org/debian/aranym
 Vcs-Git: https://salsa.debian.org/debian/aranym.git
 Standards-Version: 4.5.1
-Build-Depends: debhelper-compat (= 12), dpkg-dev (>= 1.16.1~), autotools-dev, bzip2, libsdl1.2-dev, libsdl-image1.2-dev, libmpfr-dev, libusb-1.0-0-dev [!hurd-i386], imagemagick, quilt
+Build-Depends: autotools-dev,
+               bzip2,
+               debhelper-compat (= 12),
+               dpkg-dev (>= 1.16.1~),
+               imagemagick,
+               libmpfr-dev,
+               libsdl-image1.2-dev,
+               libsdl1.2-dev,
+               libusb-1.0-0-dev [!hurd-i386],
+               quilt
 
 Package: aranym
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Recommends: uml-utilities, bridge-utils
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Recommends: bridge-utils, uml-utilities
 Conflicts: aranym-jit, aranym-mmu
 Description: Atari Running on Any Machine
  Virtual Machine for running Atari 32-bit operating systems and applications

@@ -45,7 +45,7 @@
 #endif
 
 /* Only use x87 FPU on x86-64 if long double precision is requested.  */
-#if defined(X86_64_ASSEMBLY) && USE_LONG_DOUBLE
+#if defined(X86_64_ASSEMBLY) && defined(USE_LONG_DOUBLE)
 #define USE_X87_ASSEMBLY 1
 #define ACCURATE_SIN_COS_TAN 1
 #endif
@@ -74,10 +74,7 @@ struct fpu_t {
 	/* --- Floating-Point Control Register                                --- */
 	/* ---------------------------------------------------------------------- */
 	
-	struct		{
-	
 	/* Exception Enable Byte */
-	uae_u32		exception_enable;
 	#define		FPCR_EXCEPTION_ENABLE	0x0000ff00
 	#define		FPCR_EXCEPTION_BSUN		0x00008000
 	#define		FPCR_EXCEPTION_SNAN		0x00004000
@@ -92,21 +89,19 @@ struct fpu_t {
 	#define		FPCR_MODE_CONTROL		0x000000ff
 	
 	/* Rounding precision */
-	uae_u32		rounding_precision;
 	#define		FPCR_ROUNDING_PRECISION	0x000000c0
 	#define		FPCR_PRECISION_SINGLE	0x00000040
 	#define		FPCR_PRECISION_DOUBLE	0x00000080
 	#define		FPCR_PRECISION_EXTENDED	0x00000000
 	
 	/* Rounding mode */
-	uae_u32		rounding_mode;
 	#define		FPCR_ROUNDING_MODE		0x00000030
 	#define		FPCR_ROUND_NEAR			0x00000000
 	#define		FPCR_ROUND_ZERO			0x00000010
 	#define		FPCR_ROUND_MINF			0x00000020
 	#define		FPCR_ROUND_PINF			0x00000030
 	
-	}			fpcr;
+	uae_u32 fpcr;
 	
 	/* ---------------------------------------------------------------------- */
 	/* --- Floating-Point Status Register                                 --- */
@@ -116,7 +111,7 @@ struct fpu_t {
 	
 	/* Floating-Point Condition Code Byte */
 	uae_u32		condition_codes;
-	#define		FPSR_CCB				0xff000000
+	#define		FPSR_CCB				0x0f000000
 	#define		FPSR_CCB_NEGATIVE		0x08000000
 	#define		FPSR_CCB_ZERO			0x04000000
 	#define		FPSR_CCB_INFINITY		0x02000000
@@ -142,7 +137,7 @@ struct fpu_t {
 	
 	/* Accrued Exception Byte */
 	uae_u32		accrued_exception;
-	#define		FPSR_ACCRUED_EXCEPTION	0x000000ff
+	#define		FPSR_ACCRUED_EXCEPTION	0x000000f8
 	#define		FPSR_ACCR_IOP			0x00000080
 	#define		FPSR_ACCR_OVFL			0x00000040
 	#define		FPSR_ACCR_UNFL			0x00000020

@@ -1,7 +1,7 @@
 /*
  * USB host chip emulation
  *
- * Copyright (c) 2012-2014 David Galvez. ARAnyM development team (see AUTHORS).
+ * Copyright (c) 2012-2015 David Galvez. ARAnyM development team (see AUTHORS).
  *
  * This file is part of the ARAnyM project which builds a new and powerful
  * TOS/FreeMiNT compatible virtual machine running on almost any hardware.
@@ -21,6 +21,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include "sysdeps.h"
 #include "usbhost.h"
 #include "../../atari/usbhost/usbhost_nfapi.h"
 
@@ -184,11 +185,11 @@ static uint8 root_hub_class_st[] = {
 	0x00,
 };
 
- /*--- Global variables ---*/
+/*--- Global variables ---*/
 
 virtual_usbdev_t virtual_device[USB_MAX_DEVICE];
-char product[USB_MAX_DEVICE][MAX_PRODUCT_LENGTH];
 int number_ports_used;
+int reset_flag;
 roothub_t roothub;
 uint32 port_status[NUMBER_OF_PORTS];
 
@@ -216,11 +217,10 @@ void fill_port_status(unsigned int port_number, bool connected)
 
 int32 usbhost_get_device_list(void)
 {
-	int idx_conf = 0, idx_interface = 0, idx_dev = 0, idx_virtdev = 0;
-	
+	int idx_dev = 0, idx_virtdev = 0;
 	ssize_t cnt;
-	struct libusb_device_descriptor dev_desc;
-	struct libusb_config_descriptor *config_desc;
+
+	number_ports_used = 0;
 
 	cnt = libusb_get_device_list(NULL, &devs);
 	D(bug("USBHost: Number of USB devices attached to host bus: %d", (int)cnt));
@@ -235,51 +235,71 @@ int32 usbhost_get_device_list(void)
 		}
 		D(bug("USBHost: Device %d opened", idx_dev));
 
-		r = libusb_get_device_descriptor(dev, &dev_desc);
+		r = libusb_get_device_descriptor(dev, &virtual_device[idx_virtdev].dev_desc);
 		if (r < 0) {
 			D(bug("USBHost: Unable to get device descriptor %d", r));
 			goto try_another;
 		}
 
-		if (dev_desc.bDeviceClass == LIBUSB_CLASS_HUB) {
+		if (virtual_device[idx_virtdev].dev_desc.bDeviceClass == LIBUSB_CLASS_HUB) {
 			D(bug("USBHost: Device is a HUB"));
 			goto try_another;
 		}
 
-		D(bug("USBHost: Number config: %d ", dev_desc.bNumConfigurations));
-
-		for (idx_conf = 0; idx_conf < dev_desc.bNumConfigurations; idx_conf++) {
-			r = libusb_get_config_descriptor(dev, 0, &config_desc);
-			D(bug("USBHost: Number of interfaces %d", config_desc->bNumInterfaces));
-
-			for (idx_interface = 0; idx_interface < config_desc->bNumInterfaces; idx_interface++) {
-
-				if (dev_desc.bDeviceClass != LIBUSB_CLASS_HUB)
-				{
-					r = libusb_get_string_descriptor_ascii(
-								devh[idx_dev],
-								dev_desc.iProduct,
-								(unsigned char *)product[idx_virtdev],
-								MAX_PRODUCT_LENGTH);
-
-
-					virtual_device[idx_virtdev].idx_dev = idx_dev;
-					virtual_device[idx_virtdev].idx_conf = idx_conf;
-					virtual_device[idx_virtdev].idx_interface = idx_interface;
-					virtual_device[idx_virtdev].virtdev_available = true;
-
-					idx_virtdev++;
-				}
-			}
-			idx_interface = 0;
+		r = libusb_get_string_descriptor_ascii(
+						devh[idx_dev],
+						virtual_device[idx_virtdev].dev_desc.iProduct,
+						(unsigned char *)virtual_device[idx_virtdev].product_name,
+						MAX_PRODUCT_LENGTH);
+		if (r < 0) {
+			D(bug("USBHost: Unable to get string descriptor %d", r));
+			goto try_another;
 		}
-		idx_conf = 0;
 
+		r = libusb_get_config_descriptor(dev, 0, &virtual_device[idx_virtdev].config_desc);
+		if (r < 0) {
+			D(bug("USBHost: Unable to get configuration descriptor %d", r));
+			goto try_another;
+		}
+		D(bug("USBHost: Number of interfaces %d", virtual_device[idx_virtdev].config_desc->bNumInterfaces));
+
+		virtual_device[idx_virtdev].idx_dev = idx_dev;
+		virtual_device[idx_virtdev].virtdev_available = true;
+		idx_virtdev++;
 try_another:
 		idx_dev++;
 	}
 
 	return 0;
+}
+
+
+int usbhost_release_device(int virtdev_index)
+{
+	D(bug("USBHost: Release device %d", virtdev_index));
+
+	int r = -1;
+	int dev_index, if_index;
+	int port_number;
+	int no_of_ifaces;
+
+	dev_index = virtual_device[virtdev_index].idx_dev;
+	no_of_ifaces = virtual_device[virtdev_index].config_desc->bNumInterfaces;
+
+	for (if_index = 0; if_index < no_of_ifaces; if_index++) {
+		r = libusb_release_interface(devh[dev_index], if_index);
+		if (r < 0) {
+			D(bug("USBHost: Releasing interface %d failed", if_index));
+		}
+	}
+	virtual_device[virtdev_index].connected = false;
+	port_number = virtual_device[virtdev_index].port_number;
+
+	roothub.port[port_number].busy = false;
+	roothub.port[port_number].atari_dev_idx = -1;
+	fill_port_status(port_number, virtual_device[virtdev_index].connected);
+
+	return r;
 }
 
 
@@ -289,7 +309,7 @@ void usbhost_free_usb_devices(void)
 
 	while (devs[i] != NULL) {
 		if (virtual_device[i].connected)
-			libusb_release_interface(devh[i], virtual_device[i].idx_interface);
+			usbhost_release_device(i);
 
 		libusb_close(devh[i]);
 		devh[i] = NULL;
@@ -303,82 +323,51 @@ void usbhost_free_usb_devices(void)
 
 int usbhost_claim_device(int virtdev_index)
 {
-	D(bug("USBHost: claim_device() %d", virtdev_index));
+	D(bug("USBHost: Claim device %d", virtdev_index));
 
-	int r;
-	int dev_index, int_index;
+	int r = -1;
+	int dev_index, if_index;
+	int no_of_ifaces;
 
 	dev_index = virtual_device[virtdev_index].idx_dev;
-	int_index = virtual_device[virtdev_index].idx_interface;
+	no_of_ifaces = virtual_device[virtdev_index].config_desc->bNumInterfaces;
 
-	r = libusb_kernel_driver_active(devh[dev_index], int_index);
-	if (r < 0) {
-		D(bug("USBHost: Checking if kernel driver is active failed. Error %d", r));
-		return -1;
+	for (if_index = 0; if_index < no_of_ifaces; if_index++ ) {
+		r = libusb_kernel_driver_active(devh[dev_index], if_index);
+		if (r < 0) {
+			D(bug("USBHost: Checking if kernel driver is active failed. Error %d", r));
+			return -1;
+		}
+
+		if (r == 1) {
+		D(bug("USBHost: Kernel driver active for interface %d", if_index));
+			D(bug("USBHost: Trying to detach it"));
+			r = libusb_detach_kernel_driver(devh[dev_index], if_index);
+		} else goto claim;
+		if (r < 0) {
+			D(bug("USBHost: Driver detaching failed"));
+			return -1;
+		}
+
+claim:	r = libusb_claim_interface(devh[dev_index], if_index);
+		if (r < 0) {
+		D(bug("USBHost: Claiming interface number %d failed", if_index));
+		}
 	}
-
-	if (r == 1) {
-		D(bug("USBHost: Kernel driver active for interface"));
-		D(bug("USBHost: Trying to detach it"));
-		r = libusb_detach_kernel_driver(devh[dev_index], int_index);
-	} else goto claim;
-
-	if (r < 0) {
-		D(bug("USBHost: Driver detaching failed"));
-		return -1;
-	}
-
-claim:	r = libusb_claim_interface(devh[dev_index], int_index);
-	if (r < 0) {
-		D(bug("USBHost: Claiming interface failed"));
-		return -1;
- 	}
 
 	virtual_device[virtdev_index].connected = true;
-	if (++number_ports_used == NUMBER_OF_PORTS)
-		disable_buttons();
 
 	for (int i = 0; i < NUMBER_OF_PORTS; i++) {
 		if (roothub.port[i].busy == true)
 			continue;
 		roothub.port[i].busy = true;
 		roothub.port[i].port_number = i;
-		roothub.port[i].device_index = dev_index;
+		roothub.port[i].libusb_dev_idx = dev_index;
 		virtual_device[virtdev_index].port_number = i;
 		break;
 	}
 
 	fill_port_status(virtual_device[virtdev_index].port_number, virtual_device[virtdev_index].connected);
-
-	return r;
-}
-
-
-int usbhost_release_device(int virtdev_index)
-{
-	D(bug("USBHost: release_device() %d", virtdev_index));
-
-	int r;
-	int dev_index, int_index;
-	int port_number;
-
-	dev_index = virtual_device[virtdev_index].idx_dev;
-	int_index = virtual_device[virtdev_index].idx_interface;
-
-	r = libusb_release_interface(devh[dev_index], int_index);
-	if (r < 0) {
-		D(bug("USBHost: Releasing interface failed"));
-		return -1;
- 	}
-
-	virtual_device[virtdev_index].connected = false;
-	port_number = virtual_device[virtdev_index].port_number;
-
-	roothub.port[port_number].busy = false;
-	fill_port_status(port_number, virtual_device[virtdev_index].connected);
-
-	if ((--number_ports_used < NUMBER_OF_PORTS))
-		enable_buttons();
 
 	return r;
 }
@@ -425,8 +414,9 @@ int trigger_interrupt(void *)
 
 void usbhost_init_libusb(void)
 {
-	number_ports_used = 0;
-
+	if (init_flag)
+		return;
+	
 	if (libusb_init(NULL)) {
 		D(bug("USBHost: Imposible to start libusb"));
 		return;
@@ -434,20 +424,21 @@ void usbhost_init_libusb(void)
 
 	libusb_set_debug(NULL, 3);
 	
-	for (int i = 0; i <= MAX_NUMBER_VIRT_DEV; i++) {
+	for (int i = 0; i < USB_MAX_DEVICE; i++) {
 		virtual_device[i].connected = false;
 		virtual_device[i].virtdev_available = false;
 	}
 
 	for (int i = 0; i < NUMBER_OF_PORTS; i++) {
-		roothub.port[i].device_index = 0;
+		roothub.port[i].libusb_dev_idx = 0;
+		roothub.port[i].atari_dev_idx = -1;
 	}
 
 	SDL_CreateNamedThread(trigger_interrupt, "USB", NULL);
 
 	usbhost_get_device_list();
 
-	init_flag = true;	
+	init_flag = true;
 }
 
 /*--- Private functions ---*/
@@ -488,7 +479,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 	switch (bmRType_bReq) {
 		case RH_GET_STATUS:
 			D(bug("USBHost: RH_GET_STATUS"));
-
 			*data_buf = (SDL_BYTEORDER == SDL_BIG_ENDIAN) ? 
 					(uint16) SDL_Swap16(1) : (uint16)(1) ;
 			len = 2;
@@ -496,7 +486,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_GET_STATUS | RH_INTERFACE:
 			D(bug("USBHost: RH_GET_STATUS | RH_INTERFACE"));
-
 			*data_buf = (SDL_BYTEORDER == SDL_BIG_ENDIAN) ? 
 					(uint16) SDL_Swap16(0) : (uint16)(0) ;
 			len = 2;
@@ -504,7 +493,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_GET_STATUS | RH_ENDPOINT:
 			D(bug("USBHost: RH_GET_STATUS | RH_ENDPOINT"));
-
 			*data_buf = (SDL_BYTEORDER == SDL_BIG_ENDIAN) ? 
 					(uint16) SDL_Swap16(0) : (uint16)(0) ;
 			len = 2;
@@ -512,14 +500,12 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_GET_STATUS | RH_CLASS:
 			D(bug("USBHost: RH_GET_STATUS | RH_CLASS"));
-
 			data_buf = root_hub_class_st;
 			len = 4;
 			break;
 
 		case RH_GET_STATUS | RH_OTHER | RH_CLASS:
 			D(bug("USBHost: RH_GET_STATUS | RH_OTHER | RH_CLASS"));
-		
 			*(uint32 *)data_buf = (SDL_BYTEORDER == SDL_BIG_ENDIAN) ? 
 						SDL_Swap32(port_status[wIndex - 1]) :
 						port_status[wIndex - 1];
@@ -528,11 +514,9 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_CLEAR_FEATURE | RH_ENDPOINT:
 			D(bug("USBHost: RH_CLEAR_FEATURE | RH_ENDPOINT"));
-
 			switch (wValue) {
 				case RH_ENDPOINT_STALL:
 					D(bug("USBHost: C_HUB_ENDPOINT_STALL"));
-
 					len = 0;
 					break;
 			}
@@ -540,17 +524,14 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_CLEAR_FEATURE | RH_CLASS:
 			D(bug("USBHost: RH_CLEAR_FEATURE | RH_CLASS"));
-
 			switch (wValue) {
 				case RH_C_HUB_LOCAL_POWER:
 					D(bug("USBHost: C_HUB_LOCAL_POWER"));
-
 					len = 0;
 					break;
 
 				case RH_C_HUB_OVER_CURRENT:
 					D(bug("USBHost: C_HUB_OVER_CURRENT"));
-
 					len = 0;
 					break;
 			}
@@ -558,7 +539,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_CLEAR_FEATURE | RH_OTHER | RH_CLASS:
 			D(bug("USBHost: RH_CLEAR_FEATURE | RH_OTHER | RH_CLASS"));
-
 			switch (wValue) {
 				case RH_PORT_ENABLE:
 					port_status[wIndex - 1] &= ~RH_PS_PES;
@@ -571,7 +551,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 					break;
 
 				case RH_PORT_POWER:
-				
 					len = 0;
 					break;
 
@@ -586,7 +565,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 					break;
 
 				case RH_C_PORT_SUSPEND:
-
 					len = 0;
 					break;
 
@@ -608,10 +586,8 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_SET_FEATURE | RH_OTHER | RH_CLASS:
 			D(bug("USBHost: RH_SET_FEATURE | RH_OTHER | RH_CLASS"));
-
 			switch (wValue) {
 				case RH_PORT_SUSPEND:
-
 					len = 0;
 					break;
 
@@ -626,7 +602,6 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 					break;
 
 				case RH_PORT_ENABLE:
-
 					len = 0;
 					break;
 
@@ -638,44 +613,34 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_SET_ADDRESS:
 			D(bug("USBHost: RH_SET_ADDRESS"));
-
 			rh_devnum = wValue;
 			len = 0;
 			break;
 
 		case RH_GET_DESCRIPTOR:
 			D(bug("USBHost: RH_GET_DESCRIPTOR: %x, %d", wValue, wLength));
-
 			switch (wValue) {
 				case (USB_DT_DEVICE << 8):	/* device descriptor */
-					len = min1_t(uint32,
-				    	     	     leni, min2_t(uint32,
-						     		  sizeof(root_hub_dev_des),
-					      		  	  wLength));
+					len = min1_t(uint32, leni,
+												min2_t(uint32, sizeof(root_hub_dev_des), wLength));
 					data_buf = root_hub_dev_des;
 					break;
 
 				case (USB_DT_CONFIG << 8):	/* configuration descriptor */
-					len = min1_t(uint32,
-						     leni, min2_t(uint32,
-								  sizeof(root_hub_config_des),
-								  wLength));
+					len = min1_t(uint32, leni,
+												min2_t(uint32, sizeof(root_hub_config_des), wLength));
 					data_buf = root_hub_config_des;
 					break;
 
 				case ((USB_DT_STRING << 8) | 0x00):	/* string 0 descriptors */
-					len = min1_t(uint32,
-						     leni, min2_t(uint32,
-								  sizeof(root_hub_str_index0),
-								  wLength));
+					len = min1_t(uint32, leni,
+												min2_t(uint32, sizeof(root_hub_str_index0), wLength));
 					data_buf = root_hub_str_index0;
 					break;
 
 				case ((USB_DT_STRING << 8) | 0x01):	/* string 1 descriptors */
-					len = min1_t(uint32,
-						     leni, min2_t(uint32,
-								  sizeof(root_hub_str_index1),
-								  wLength));
+					len = min1_t(uint32, leni,
+												min2_t(uint32, sizeof(root_hub_str_index1), wLength));
 					data_buf = root_hub_str_index1;
 					break;
 
@@ -696,14 +661,12 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 
 		case RH_GET_CONFIGURATION:
 			D(bug("USBHost: RH_GET_CONFIGURATION"));
-
 			*(uint8 *) data_buf = 0x01;
 			len = 1;
 			break;
 
 		case RH_SET_CONFIGURATION:
 			D(bug("USBHost: RH_SET_CONFIGURATION"));
-
 			len = 0;
 			break;
 
@@ -712,7 +675,7 @@ int32 USBHost::aranym_submit_rh_msg(uint32 pipe, memptr buffer, int32 transfer_l
 			stat = USB_ST_STALLED;
 	}
 
-	len = min1_t(int32, len, leni);
+	len = min1_t(uint32, len, leni);
 
 	if(buffer != 0)
 		Host2Atari_memcpy(buffer, data_buf, len);
@@ -740,7 +703,7 @@ int32 USBHost::usb_lowlevel_init(void)
 	rh_devnum = 0;
 
 	reset();
-	
+
 	return 0;
 }
 
@@ -761,8 +724,9 @@ int32 USBHost::submit_control_msg(uint32 pipe, memptr buffer,
 	struct devrequest *cmd;
 	uint8 *tempbuff;
 
-	int32 r;
+	int32 r = -1;
 	unsigned int dev_idx = 0;
+	int i;
 
 	uint16 bmRType;
 	uint16 bReq;
@@ -788,17 +752,39 @@ int32 USBHost::submit_control_msg(uint32 pipe, memptr buffer,
 
 	D(bug("USBHost: bmRType %x, bReq %x, wValue %x, wIndex %x, wLength %x", bmRType, bReq, wValue, wIndex, wLength));
 
-	dev_idx = roothub.port[devnum - 2].device_index;
-	D(bug("USBHost: dev_idx %d ", dev_idx));
-
-	if (bReq == USB_REQ_SET_ADDRESS) {	/* The only msg we don't want to pass to the device */
-		D(bug("USBHost: SET_ADDRESS msg %x ", bReq));
+	/* Don't allow to change device's addresses set by the host OS */
+	if (bReq == USB_REQ_SET_ADDRESS) {
+		for (i = 0; i < NUMBER_OF_PORTS; i++) {
+			/*
+			 * We need to be careful to don't assign to an empty port an already connected
+			 * device during the virtual machine reboot. For this we've created the reset_flag
+			 * which indicates that we are setting USB devices during a reboot scenario.
+			 */
+			if (((roothub.port[i].atari_dev_idx < 0) && !reset_flag) || ((roothub.port[i].atari_dev_idx >= 0) && reset_flag)) {
+				roothub.port[i].atari_dev_idx = wValue;
+				if (reset_flag)
+					reset_flag = 0;
+				break;
+			}
+		}
+		D(bug("USBHost: Attempt to set device address"));
 		r = 0;
 	}
-	else
+	else if ((bReq == USB_REQ_SET_CONFIGURATION) && (wValue > 1)) {	/* We only support one configuration per device */
+		D(bug("USBHost: Attempt to change to configuration number %d ", wValue));
+		r = -1;
+	}
+	else {
+		for (i = 0; i < NUMBER_OF_PORTS; i++) {
+			if (roothub.port[i].atari_dev_idx == devnum) {
+				dev_idx = roothub.port[i].libusb_dev_idx;
+				D(bug("USBHost: dev_idx %d ", dev_idx));
+				break;
+			}
+		}
 		r = libusb_control_transfer(devh[dev_idx], bmRType, bReq, wValue, wIndex, tempbuff, wLength, 0);
-
-	D(bug("USBHost: bytes transmitted %d ", r));
+		D(bug("USBHost: bytes transmitted %d ", r));
+	}
 
 	return r;
 }
@@ -819,16 +805,17 @@ int32 USBHost::submit_bulk_msg(uint32 pipe, memptr buffer, int32 len)
 	D(bug("\nUSBHost: submit_bulk_msg()"));
 
 	uint8 *tempbuff;
-	
+
 	int32 dir_out;
 	uint8 endpoint;
 	int32 devnum;
 	int32 transferred;
 	unsigned int dev_idx = 0;
+	int i;
 	int32 r;
 
 	tempbuff = (uint8 *)Atari2HostAddr(buffer);
-	
+
 	dir_out = usb_pipeout(pipe);
 	endpoint = usb_pipeendpoint(pipe) | (dir_out ? LIBUSB_ENDPOINT_OUT : LIBUSB_ENDPOINT_IN);
 	devnum = usb_pipedevice(pipe);
@@ -838,8 +825,13 @@ int32 USBHost::submit_bulk_msg(uint32 pipe, memptr buffer, int32 len)
 	D(bug("USBHost: dev=%d endpoint=%d endpoint address= %x buf=%p size=%d dir_out=%d",
 	    usb_pipedevice(pipe), usb_pipeendpoint(pipe), endpoint, tempbuff, len, dir_out));
 
-	dev_idx = roothub.port[devnum - 2].device_index;
-	D(bug("USBHost: dev_idx %d ", dev_idx));
+	for (i = 0; i < NUMBER_OF_PORTS; i++) {
+		if (roothub.port[i].atari_dev_idx == devnum) {
+			dev_idx = roothub.port[i].libusb_dev_idx;
+			D(bug("USBHost: dev_idx %d ", dev_idx));
+			break;
+		}
+	}
 
 	r = libusb_bulk_transfer(devh[dev_idx], endpoint, tempbuff, len, &transferred, 1000);
 	D(bug("USBHost: return: %d len: %d transferred: %d", r, len, transferred));
@@ -856,8 +848,10 @@ void USBHost::reset()
 
 	for (int i = 0; i < NUMBER_OF_PORTS; i++) {
 		port_status[i] |= (RH_PS_PPS | RH_PS_PES);
-		if (port_status[i] & RH_PS_CCS)
+		if (port_status[i] & RH_PS_CCS) {
+			reset_flag = 1;
 			port_status[i] |= RH_PS_CSC;
+		}
 	}
 }
 
@@ -938,7 +932,7 @@ USBHost::~USBHost()
 			D(bug("USBHost: Trying to close device %d", i));
 
 			while (port_number < NUMBER_OF_PORTS) {
-				if (roothub.port[port_number].device_index == i) {
+				if (roothub.port[port_number].libusb_dev_idx == i) {
 					if (libusb_release_interface(devh[i], roothub.port[port_number].interface) < 0) {
 						D(bug("USBHost: unable to release device interface"));
 					}
@@ -959,7 +953,7 @@ USBHost::~USBHost()
 		usbhost_free_usb_devices();
 		libusb_exit(NULL);
 	}
-	
+
 	D(bug("USBHost: destroyed"));
 }
 

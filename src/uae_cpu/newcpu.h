@@ -37,7 +37,7 @@
 #include "registers.h"
 #include "spcflags.h"
 #include "m68k.h"
-#include "memory.h"
+#include "memory-uae.h"
 
 # include <csetjmp>
 
@@ -77,15 +77,21 @@ struct cputbl {
     uae_u16 opcode;
 };
 
-extern cpuop_func *cpufunctbl[65536] ASM_SYM_FOR_FUNC ("cpufunctbl");
+extern cpuop_func *cpufunctbl[65536];
 
 #ifdef USE_JIT
 typedef void compop_func (uae_u32) REGPARAM;
 
 struct comptbl {
     compop_func *handler;
-	uae_u32		specific;
 	uae_u32		opcode;
+	uae_u32		specific;
+#define COMP_OPCODE_ISJUMP      0x0001
+#define COMP_OPCODE_LONG_OPCODE 0x0002
+#define COMP_OPCODE_CMOV        0x0004
+#define COMP_OPCODE_ISADDX      0x0008
+#define COMP_OPCODE_ISCJUMP     0x0010
+#define COMP_OPCODE_USES_FPU    0x0020
 };
 #endif
 
@@ -296,7 +302,8 @@ extern uaecptr last_fault_for_exception_3;
 #define CPU_OP_NAME(a) op ## a
 
 /* 68040+ 68881 */
-extern struct cputbl op_smalltbl_0_ff[];
+extern const struct cputbl op_smalltbl_0_ff[];
+extern const struct cputbl op_smalltbl_0_nf[];
 
 #ifdef FLIGHT_RECORDER
 extern void m68k_record_step(uaecptr, int);
@@ -321,5 +328,7 @@ static inline void cpu_check_ticks(void)
 #define cpu_check_ticks()
 #define cpu_do_check_ticks()
 #endif
+
+cpuop_func op_illg_1;
 
 #endif /* NEWCPU_H */

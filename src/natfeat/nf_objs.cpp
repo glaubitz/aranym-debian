@@ -62,9 +62,14 @@
 #ifdef NFCLIPBRD_SUPPORT
 # include "nfclipbrd.h"
 #endif
-
+#ifdef NFSCSI_SUPPORT
+# include "nf_scsidrv.h"
+#endif
 #ifdef USBHOST_SUPPORT
 # include "usbhost.h"
+#endif
+#ifdef NFEXEC_SUPPORT
+# include "nf_hostexec.h"
 #endif
 /* add your NatFeat class definition here */
 
@@ -95,6 +100,7 @@ void NFCreate(void)
 	NFAdd(new NF_StdErr);
 
 	/* additional NF */
+	NFAdd(new NF_Exit);
 	NFAdd(new BootstrapNatFeat);
 	NFAdd(new DebugPrintf);
 	NFAdd(new XHDIDriver);
@@ -155,6 +161,14 @@ void NFCreate(void)
 
 #ifdef USBHOST_SUPPORT
 	NFAdd(new USBHost);
+#endif
+
+#ifdef NFSCSI_SUPPORT
+	NFAdd(new SCSIDriver);
+#endif
+
+#ifdef NFEXEC_SUPPORT
+	NFAdd(new HostExec);
 #endif
 	/* add your NatFeat object declaration here */
 }

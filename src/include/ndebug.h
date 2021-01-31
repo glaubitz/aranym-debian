@@ -28,7 +28,7 @@
 
 #include "sysdeps.h"
 #include "identify.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "cpu_emulation.h"
 
 # include <cctype>
@@ -40,7 +40,9 @@ class ndebug {
 
   static const unsigned int max_breakpoints = 256;
 
+#ifdef HAVE_TERMIOS_H
   static termios savetty;
+#endif
   static bool issavettyvalid;
   static unsigned int rowlen;
   static const unsigned int dbsize = 1000;
@@ -160,7 +162,8 @@ public:
   static void dbprintf(const char *, ...) __attribute__((format(__printf__, 1, 2)));
 
   static void pdbprintf(const char *, ...) __attribute__((format(__printf__, 1, 2)));
-
+  static void pdbvprintf(const char *, va_list args) __attribute__((format(__printf__, 1, 0)));
+	
 #ifdef DEBUGGER
   static bool do_skip;
   static void run();
@@ -171,5 +174,7 @@ public:
   static void showHistory(unsigned int, bool showLast = true);
 #endif
 };
+
+extern "C" void guialert(const char *, ...) __attribute__((format(__printf__, 1, 2)));
 
 #endif

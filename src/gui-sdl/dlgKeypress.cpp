@@ -23,12 +23,8 @@
 #include "input.h"
 #include "dlgKeypress.h"
 
-static SGOBJ presskeydlg[] =
-{
-	{ SGBOX, SG_BACKGROUND, 0, 0,0, 15,3, NULL },
-	{ SGTEXT, 0, 0, 2,1, 11,1, "Press a key" },
-	{ -1, 0, 0, 0,0, 0,0, NULL }
-};
+#define SDLGUI_INCLUDE_PRESSKEYDLG
+#include "sdlgui.sdl"
 
 DlgKeypress::DlgKeypress(SGOBJ *dlg)
 	: Dialog(dlg)
@@ -45,7 +41,12 @@ void DlgKeypress::keyPress(const SDL_Event &event)
 	if (event.type == SDL_KEYDOWN) {
 		keysym.sym = event.key.keysym.sym;
 		keysym.mod = (SDL_Keymod)(event.key.keysym.mod & HOTKEYS_MOD_MASK);
-		if (SDLK_IS_MODIFIER(keysym.sym))
+#if defined(_WIN32) || defined(__CYGWIN__)
+		/* SDL on windows does not report KMOD_CTRL on right ctrl key */
+		if (keysym.sym == SDLK_RCTRL)
+			keysym.mod = (SDL_Keymod)(keysym.mod | KMOD_CTRL);
+#endif
+		if (SDLK_IS_MODIFIER(keysym.sym) && keysym.sym != SDLK_NUMLOCKCLEAR && keysym.sym != SDLK_SCROLLLOCK)
 		{
 			keysym.sym = SDLK_UNKNOWN;
 		}

@@ -22,6 +22,9 @@
 #include "cpu_emulation.h"
 #include "parameters.h"
 #include "nfcdrom_sdl.h"
+
+#if !SDL_VERSION_ATLEAST(2, 0, 0)
+
 #include "nfcdrom_atari.h"
 #include "../../atari/nfcdrom/nfcdrom_nfapi.h"
 #include "toserror.h"
@@ -52,6 +55,11 @@ CdromDriverSdl::~CdromDriverSdl(void)
 }
 
 /*--- Public functions ---*/
+
+int CdromDriverSdl::Count()
+{
+	return SDL_CDNumDrives();
+}
 
 const char *CdromDriverSdl::DeviceName(int drive)
 {
@@ -554,3 +562,5 @@ int32 CdromDriverSdl::cd_discinfo(memptr device, memptr buffer)
 	CloseDrive(drive);
 	return TOS_E_OK;
 }
+
+#endif

@@ -24,13 +24,20 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include "sysdeps.h"
 #include "vm_alloc.h"
+
+#if defined(OS_freebsd) && defined(CPU_x86_64)
+#	include <sys/resource.h>
+#endif
 
 # include <cstdlib>
 # include <cstring>
 #ifdef HAVE_WIN32_VM
-	#define WIN32_LEAN_AND_MEAN /* avoid including junk */
+    #undef WIN32_LEAN_AND_MEAN
+	#define WIN32_LEAN_AND_MEAN 1 /* avoid including junk */
 	#include <windows.h>
+    #undef WIN32_LEAN_AND_MEAN /* to avoid redefinition in SDL headers */
 #endif
 
 #ifdef HAVE_FCNTL_H
@@ -52,6 +59,9 @@
    because the emulated target is 32-bit and this helps to allocate
    memory so that branches could be resolved more easily (32-bit
    displacement to code in .text), on AMD64 for example.  */
+#if !defined(MAP_32BIT) && defined(MAP_LOW32)
+	#define MAP_32BIT MAP_LOW32
+#endif
 #ifndef MAP_32BIT
 	#define MAP_32BIT 0
 #endif
@@ -115,12 +125,12 @@ static int translate_map_flags(int vm_flags)
 #ifdef HAVE_WIN32_VM
 static inline LPVOID align_addr_segment(LPVOID addr)
 {
-	return (LPVOID)(((DWORD)addr) & -65536);
+	return (LPVOID)(((DWORD_PTR)addr) & -65536);
 }
 
 static inline DWORD align_size_segment(LPVOID addr, DWORD size)
 {
-	return size + ((DWORD)addr - (DWORD)align_addr_segment(addr));
+	return size + ((DWORD_PTR)addr - (DWORD_PTR)align_addr_segment(addr));
 }
 #endif
 
@@ -200,9 +210,29 @@ void * vm_acquire(size_t size, int options)
 	int the_map_flags = translate_map_flags(options) | map_flags;
 	char **base = (options & VM_MAP_32BIT) ? &next_address_32bit : &next_address;
 
-	if ((addr = mmap((caddr_t)(*base), size, VM_PAGE_DEFAULT, the_map_flags, fd, 0)) == (void *)MAP_FAILED)
-		return VM_MAP_FAILED;
+//
+// FREEBSD has no MAP_32BIT on x64
+// Hack to limit allocation to lower 32 Bit
+#if defined(OS_freebsd) && defined(CPU_x86_64)
+	static int mode32 = 0;
+	static rlimit oldlim;
+        if (!mode32 && (options & VM_MAP_32BIT)) {
+	  getrlimit(RLIMIT_DATA, &oldlim);
+          struct rlimit rlim;
+          rlim.rlim_cur = rlim.rlim_max = 0x10000000;
+          setrlimit(RLIMIT_DATA, &rlim);
+          mode32 = 1;
+        }
+#	define RESTORE_MODE	if (mode32) { setrlimit(RLIMIT_DATA, &oldlim); mode32 = 0;}
+#else
+#	define RESTORE_MODE
+#endif
 	
+	addr = mmap((void *)(*base), size, VM_PAGE_DEFAULT, the_map_flags, fd, 0);
+	RESTORE_MODE;
+	if (addr == (void *)MAP_FAILED)
+		return VM_MAP_FAILED;
+
 	// Sanity checks for 64-bit platforms
 	if (sizeof(void *) > 4 && (options & VM_MAP_32BIT) && !(((char *)addr + size) <= (char *)0xffffffff))
 	{
@@ -212,10 +242,6 @@ void * vm_acquire(size_t size, int options)
 
 	*base = (char *)addr + size;
 	
-	// Since I don't know the standard behavior of mmap(), zero-fill here
-	if (std::memset(addr, 0, size) != addr)
-		return VM_MAP_FAILED;
-
 #else
 #ifdef HAVE_WIN32_VM
 	if ((addr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)) == NULL)
@@ -227,10 +253,6 @@ void * vm_acquire(size_t size, int options)
 		vm_release(addr, size);
 		return VM_MAP_FAILED;
 	}
-
-	// Zero newly allocated memory
-	if (std::memset(addr, 0, size) != addr)
-		return VM_MAP_FAILED;
 #else
 	if ((addr = calloc(size, 1)) == 0)
 		return VM_MAP_FAILED;
@@ -274,11 +296,7 @@ bool vm_acquire_fixed(void * addr, size_t size, int options)
 #elif defined(HAVE_MMAP_VM)
 	const int extra_map_flags = translate_map_flags(options);
 
-	if (mmap((caddr_t)addr, size, VM_PAGE_DEFAULT, extra_map_flags | map_flags | MAP_FIXED, zero_fd, 0) == MAP_FAILED)
-		return false;
-
-	// Since I don't know the standard behavior of mmap(), zero-fill here
-	if (std::memset(addr, 0, size) != addr)
+	if (mmap((void *)addr, size, VM_PAGE_DEFAULT, extra_map_flags | map_flags | MAP_FIXED, zero_fd, 0) == MAP_FAILED)
 		return false;
 #else
 #ifdef HAVE_WIN32_VM
@@ -291,10 +309,6 @@ bool vm_acquire_fixed(void * addr, size_t size, int options)
 	DWORD  req_size = align_size_segment(addr, size);
 	LPVOID ret_addr = VirtualAlloc(req_addr, req_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (ret_addr != req_addr)
-		return false;
-
-	// Zero newly allocated memory
-	if (memset(addr, 0, size) != addr)
 		return false;
 #else
 	// Unsupported
@@ -323,7 +337,7 @@ int vm_release(void * addr, size_t size)
 	if (vm_deallocate(mach_task_self(), (vm_address_t)addr, size) != KERN_SUCCESS)
 		return -1;
 #elif defined(HAVE_MMAP_VM)
-	if (munmap((caddr_t)addr, size) != 0)
+	if (munmap((void *)addr, size) != 0)
 		return -1;
 
 #else
@@ -348,7 +362,7 @@ int vm_protect(void * addr, size_t size, int prot)
 	int ret_code = vm_protect(mach_task_self(), (vm_address_t)addr, size, 0, prot);
 	return ret_code == KERN_SUCCESS ? 0 : -1;
 #elif defined(HAVE_MMAP_VM)
-	int ret_code = mprotect((caddr_t)addr, size, prot);
+	int ret_code = mprotect((void *)addr, size, prot);
 	return ret_code == 0 ? 0 : -1;
 #elif defined(HAVE_WIN32_VM)
 	DWORD old_prot;
@@ -434,12 +448,14 @@ int main(void)
 #if defined(TEST_VM_PROT_NONE_READ)
 	// this should cause a core dump
 	char foo = *fault_address;
+	// if we get here vm_protect(VM_PAGE_NOACCESS) did not work
 	return 0;
 #endif
 
 #if defined(TEST_VM_PROT_NONE_WRITE) || defined(TEST_VM_PROT_READ_WRITE)
 	// this should cause a core dump
 	*fault_address = 'z';
+	// if we get here vm_protect(VM_PAGE_READ) did not work
 	return 0;
 #endif
 

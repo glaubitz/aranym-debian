@@ -21,7 +21,7 @@
 #include "sysdeps.h"
 #include "hardware.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "host.h"
 #include "audio_dma.h"
 #include "audio_conv.h"
@@ -403,10 +403,36 @@ void AUDIODMA::handleWrite(uaecptr addr, uae_u8 value)
 
 void AUDIODMA::updateCurrent(void)
 {
-	current = start;
+	int time_elapsed, total_samples, total_duration, sample_size_shift;
+
+	current = start_replay;
 
 	if (playing == SDL_AUDIO_PLAYING) {
-		current += (end_replay-start_replay)>>1;
+		time_elapsed = SDL_GetTicks() - start_tic;
+
+		switch (mode & (MODE_FORMAT_MASK<<MODE_FORMAT)) {
+			case MODE_FORMAT_8STEREO:
+				sample_size_shift = 1;
+				break;
+			case MODE_FORMAT_8MONO:
+				sample_size_shift = 0;
+				break;
+			case MODE_FORMAT_16STEREO:
+			default:
+				sample_size_shift = 2;
+				break;
+		}
+
+		total_samples = (end_replay-start_replay)>>sample_size_shift;
+		total_duration = (total_samples * 1000) / freq;
+		if (total_duration<0) {
+			total_duration = 1;
+		}
+		
+		current += ((time_elapsed * total_samples)/ total_duration)<<sample_size_shift;
+
+		if (current<start_replay) current=start_replay;
+		if (current>end_replay) current=end_replay;
 	}
 }
 
@@ -434,7 +460,7 @@ void AUDIODMA::updateControl(void)
 
 void AUDIODMA::updateMode(void)
 {
-	int channels, freq, offset, skip, prediv;
+	int channels, offset, skip, prediv;
 	Uint16	format;
 
 	SDL_LockAudio();
@@ -467,8 +493,8 @@ void AUDIODMA::updateMode(void)
 		freq = getCROSSBAR()->getIntFreq() / (256 * (prediv+1));
 	}
 
-	D(bug("audiodma: mode: format 0x%04x, %d channels, offset %d, skip %d, %d freq",
-		format, channels, offset, skip, freq));
+	D(bug("audiodma: mode: format %s, %d channels, offset %d, skip %d, %d freq",
+		HostAudio::FormatName(format), channels, offset, skip, freq));
 
 	audioConv->setConversion(format, channels, freq, offset, skip,
 		host->audio.obtained.format, host->audio.obtained.channels,

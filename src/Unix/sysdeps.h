@@ -51,41 +51,7 @@
 
 #endif
 
-#ifdef OS_openbsd
-#define OS_INCLUDES_DEFINED
-
-#include <unistd.h>
-#include <sys/param.h>
-#include <sys/mount.h>
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
-#include <time.h>
-#include <utime.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <dirent.h>
-
-#endif
-
-#ifdef OS_solaris
-#define OS_INCLUDES_DEFINED
-
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/statvfs.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <utime.h>
-#include <alloca.h>
-#include <dirent.h>
-
-#endif
-
-#if defined(OS_beos) || defined(OS_cygwin)
+#if defined(OS_beos) || defined(OS_cygwin) || defined(OS_mingw)
 #include <stdlib.h>
 #include <string.h>
 #endif
@@ -97,6 +63,10 @@
 #endif /* MACOSX_support */
 
 #ifndef OS_INCLUDES_DEFINED
+
+#ifdef OS_mingw
+#include "windows_ver.h"
+#endif
 
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -190,10 +160,14 @@
 
 extern void install_sigsegv(void);
 extern void uninstall_sigsegv(void);
+void real_segmentationfault(void);
 
-#if defined(OS_cygwin) && defined(EXTENDED_SIGSEGV)
-void cygwin_abort(void);
-#define abort() cygwin_abort()
+#if (defined(OS_cygwin) || defined(OS_mingw)) && defined(EXTENDED_SIGSEGV)
+#ifdef __cplusplus
+extern "C"
+#endif
+void cygwin_mingw_abort(void) __attribute__((__noreturn__));
+#define abort() cygwin_mingw_abort()
 #endif
 
 #ifdef HAVE_GETOPT_H
@@ -296,6 +270,16 @@ typedef int64 intptr;
 typedef uae_u32 uaecptr;
 typedef char flagtype;
 
+#ifdef __cplusplus
+# if __cplusplus >= 201103L
+#  define ARANYM_NO_THROWS noexcept(true)
+#  define ARANYM_THROWS(a, ...) noexcept(false)
+# else
+#  define ARANYM_NO_THROWS throw()
+#  define ARANYM_THROWS(a, ...) throw(a ## __VA_ARGS__)
+# endif
+#endif
+
 /* Bochs data types */
 #define Bit8u uint8
 #define Bit16u uint16
@@ -346,7 +330,7 @@ static inline void do_put_mem_word(uae_u16 *a, uae_u32 v) {uint8 *b = (uint8 *)a
 
 #else /* WORDS_BIGENDIAN */
 
-#if defined(X86_ASSEMBLY) || defined(X86_64_ASSEMBLY)
+#if (defined(X86_ASSEMBLY) || defined(X86_64_ASSEMBLY)) && (defined(__i386__) || defined(__x86_64__))
 
 /* Intel x86 */
 #define HAVE_OPTIMIZED_BYTESWAP_32
@@ -427,7 +411,7 @@ static inline void do_put_mem_long(uae_u32 *a, uae_u32 v) { __put_mem_long(a, do
 static inline void do_put_mem_word(uae_u16 *a, uae_u32 v) { __put_mem_word(a, do_byteswap_16(v)); }
 #define do_put_mem_byte(a, v) __put_mem_byte(a, v)
 
-#elif defined(ARMV6_ASSEMBLY) 
+#elif defined(ARMV6_ASSEMBLY) && defined(__arm__)
 
 // #pragma message "ARM/v6 optimized sysdeps"
 static inline uae_u32 do_get_mem_long(uae_u32 *a) {uint32 retval; __asm__ (
@@ -461,7 +445,7 @@ static inline uae_u32 do_byteswap_16(uae_u32 v) {__asm__ (
 #define do_get_mem_word_unswapped(a) ((uae_u32)*((uae_u16 *)(a)))
 
 /* ARM v1 to v5 support or cross ARM support */
-#elif defined(ARM_ASSEMBLY)
+#elif defined(ARM_ASSEMBLY) && defined(__arm__)
 
 // #pragma message "ARM/generic optimized sysdeps"
 
@@ -570,12 +554,6 @@ static inline void do_put_mem_word(uae_u16 *a, uae_u32 v) {uint8 *b = (uint8 *)a
 #undef NO_INLINE_MEMORY_ACCESS
 #undef MD_HAVE_MEM_1_FUNCS
 
-#ifdef X86_ASSEMBLY
-#define ASM_SYM_FOR_FUNC(a) __asm__(a)
-#else
-#define ASM_SYM_FOR_FUNC(a)
-#endif
-
 #ifndef REGPARAM
 # define REGPARAM
 #endif
@@ -596,7 +574,8 @@ extern "C" char *strdup(const char *s);
 #endif
 
 #ifdef OS_mingw
-#include <windows.h>
+#include <io.h>
+#include <sys/time.h>
 
 /* FIXME: O_SYNC not defined in mingw, is there a replacement value ?
  * Does it make floppy working even without it ?
@@ -691,6 +670,14 @@ typedef jmp_buf sigjmp_buf;
 # endif
 #endif
 
+#if defined __cplusplus
+#define EXTERN_INLINE extern inline
+#elif defined __GNUC_STDC_INLINE__
+#define EXTERN_INLINE extern __inline __attribute__((__gnu_inline__))
+#else
+#define EXTERN_INLINE extern __inline
+#endif
+
 #if __GNUC__ < 3
 # define __builtin_expect(foo,bar) (foo)
 #endif
@@ -703,5 +690,14 @@ typedef jmp_buf sigjmp_buf;
 #    define __attribute__(xyz)	/* Ignore */
 #  endif
 #endif
+
+#ifndef EXIT_SUCCESS
+#  define EXIT_SUCCESS 0
+#endif
+#ifndef EXIT_FAILURE
+#  define EXIT_FAILURE 1
+#endif
+
+#include "win32_supp.h"
 
 #endif /* SYSDEPS_H */

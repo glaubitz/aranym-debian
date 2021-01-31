@@ -31,29 +31,31 @@
 
 /*	TOS ROM class */
 
-TosBootOs::TosBootOs(void) throw (AranymException)
+TosBootOs::TosBootOs(void) ARANYM_THROWS(AranymException)
 {
-	tos_patch();
+	tos_patch(true);
 }
 
-void TosBootOs::reset(void) throw (AranymException)
+void TosBootOs::reset(bool cold) ARANYM_THROWS(AranymException)
 {
-	tos_patch();
+	tos_patch(cold);
 }
 
 /*--- Private functions ---*/
 
-void TosBootOs::tos_patch(void) throw (AranymException)
+void TosBootOs::tos_patch(bool cold) ARANYM_THROWS(AranymException)
 {
-	if (strlen(bx_options.tos_path) == 0) {
+	if (strlen(bx_options.tos.tos_path) == 0) {
 		throw AranymException("Path to TOS ROM image file undefined");
 	}
 
-	load(bx_options.tos_path);
+	load(bx_options.tos.tos_path);
+
+	init(cold);
 
 	// check if this is the correct 68040 aware TOS ROM version
 	D(bug("Checking TOS version.."));
-	unsigned char TOS404[16] = {0xe5,0xea,0x0f,0x21,0x6f,0xb4,0x46,0xf1,0xc4,0xa4,0xf4,0x76,0xbc,0x5f,0x03,0xd4};
+	static unsigned char const TOS404[16] = {0xe5,0xea,0x0f,0x21,0x6f,0xb4,0x46,0xf1,0xc4,0xa4,0xf4,0x76,0xbc,0x5f,0x03,0xd4};
 	MD5 md5;
 	unsigned char loadedTOS[16];
 	md5.computeSum(ROMBaseHost, RealROMSize, loadedTOS);
@@ -63,9 +65,9 @@ void TosBootOs::tos_patch(void) throw (AranymException)
 
 	// patch it for 68040 compatibility
 	D(bug("Patching TOS 4.04 for 68040 compatibility.."));
-	int ptr, i=0;
-	while((ptr=tosdiff[i].offset) >= 0)
-		ROMBaseHost[ptr] = tosdiff[i++].newvalue;
+	unsigned int ptr, i;
+	for (i = 0; (ptr=tosdiff[i].start) > 0; i++)
+		memcpy(&ROMBaseHost[ptr], tosdiff[i].patch, tosdiff[i].len);
 
 	// patch cookies
 	// _MCH
@@ -232,8 +234,4 @@ void TosBootOs::tos_patch(void) throw (AranymException)
 	}
 
 	infoprint("TOS 4.04 loading... [OK]");
-
-	init();
 }
-/* vim:ts=4:sw=4
- */

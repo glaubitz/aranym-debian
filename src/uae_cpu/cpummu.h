@@ -187,6 +187,8 @@ extern REGPARAM2 uae_u16 mmu_get_word_slow(uaecptr addr, int super, int data,
 										   int size, struct mmu_atc_line *cl);
 extern REGPARAM2 uae_u32 mmu_get_long_slow(uaecptr addr, int super, int data,
 										   int size, struct mmu_atc_line *cl);
+extern REGPARAM2 uae_u64 mmu_get_quad_slow(uaecptr addr, int super, int data,
+										   struct mmu_atc_line *cl);
 
 extern REGPARAM2 void mmu_put_word_unaligned(uaecptr addr, uae_u16 val, int data);
 extern REGPARAM2 void mmu_put_long_unaligned(uaecptr addr, uae_u32 val, int data);
@@ -197,6 +199,8 @@ extern REGPARAM2 void mmu_put_word_slow(uaecptr addr, uae_u16 val, int super, in
 										int size, struct mmu_atc_line *cl);
 extern REGPARAM2 void mmu_put_long_slow(uaecptr addr, uae_u32 val, int super, int data,
 										int size, struct mmu_atc_line *cl);
+extern REGPARAM2 void mmu_put_quad_slow(uaecptr addr, uae_u64 val, int super, int data,
+										struct mmu_atc_line *cl);
 
 extern void mmu_make_transparent_region(uaecptr baseaddr, uae_u32 size, int datamode);
 
@@ -216,21 +220,6 @@ static inline void mmu_set_ttr(int regno, uae_u32 val)
 static inline void mmu_set_mmusr(uae_u32 val)
 {
 	regs.mmusr = val;
-}
-
-static inline void mmu_set_root_pointer(int regno, uae_u32 val)
-{
-	val &= MMU_ROOT_PTR_ADDR_MASK;
-	switch (regno) {
-	case 0x806:
-		regs.urp = val;
-		break;
-	case 0x807:
-		regs.srp = val;
-		break;
-	default:
-		abort();
-	}
 }
 
 #define FC_DATA		(regs.s ? 5 : 1)

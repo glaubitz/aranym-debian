@@ -1,6 +1,8 @@
 #ifndef SDL_OPENGL_WRAPPER_H
 #define SDL_OPENGL_WRAPPER_H
 
+#if defined(ENABLE_OPENGL)
+
 /* on Cygwin we need the WIN32 version of the api */
 #ifdef __CYGWIN__
 #  include <wchar.h>
@@ -13,8 +15,10 @@
 #  endif
 #  undef __CYGWIN__
 #  define __cygwin_undefined_here
+#  define __STRALIGN_H_ 1
 #endif
 
+#define GL_GLEXT_LEGACY
 #include <SDL_opengl.h>
 
 #if defined(__MACOSX__)
@@ -27,6 +31,7 @@
 #include <GL/gl.h>	/* Header File For The OpenGL Library */
 #include <GL/glu.h>	/* Header File For The GLU Library */
 #endif
+#include "glenums.h"
 
 /*	On darwin/Mac OS X systems SDL_opengl.h includes OpenGL/gl.h instead of GL/gl.h, 
    	which does not define GLAPI and GLAPIENTRY used by GL/osmesa.h
@@ -51,5 +56,7 @@
 #  define __CYGWIN__ 1
 #  undef __cygwin_undefined_here
 #endif
+
+#endif /* ENABLE_OPENGL */
 
 #endif /* SDL_OPENGL_WRAPPER_H */

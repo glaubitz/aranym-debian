@@ -1,6 +1,4 @@
 /*
- * $Id$
- *
  * The ARAnyM MetaDOS driver.
  *
  * 2002 STan
@@ -20,37 +18,16 @@
 
 /* DOS file handling routines */
 
-# include "dosfile.h"
-# include "libkern/libkern.h"
-
-# include "mint/filedesc.h"
-# include "mint/ioctl.h"
-# include "mint/iov.h"
-# include "mint/net.h"
-# include "mint/fcntl.h"
-# include "mint/emu_tos.h"
-# include "mint/time.h"
-
-# include "debug.h"
-# include "filesys.h"
-# include "k_fds.h"
-
-# include "mintproc.h"
-# include "mintfake.h"
-
-/* wait condition for selecting processes which got collisions */
-short select_coll;
+#include "hostfs.h"
+#include "mint/ioctl.h"
 
 
 long _cdecl
 sys_f_open (MetaDOSFile const char *name, short mode)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *fp = NULL;
 	short fd = MIN_OPEN - 1;
-# if O_GLOBAL
-	int global = 0;
-#endif
 	long ret;
 
 	TRACE (("Fopen(%s, %x)", name, mode));
@@ -58,23 +35,8 @@ sys_f_open (MetaDOSFile const char *name, short mode)
 # if O_GLOBAL
 	if (mode & O_GLOBAL)
 	{
-		if (p->p_cred->ucr->euid)
-		{
-			DEBUG (("Fopen(%s): O_GLOBAL denied for non root"));
-			return EPERM;
-		}
-
-		/* from now the sockets are clean */
-		if (!stricmp (name, "u:\\dev\\socket"))
-		{
-			ALERT ("O_GLOBAL for sockets denied; update your network tools");
-			return EINVAL;
-		}
-
-		ALERT ("Opening a global handle (%s)", name);
-
-		p = rootproc;
-		global = 1;
+	   DEBUG(("O_GLOBAL is obsolete, please update your driver (%s)",name));
+	   return EINVAL;
 	}
 # endif
 
@@ -101,16 +63,10 @@ sys_f_open (MetaDOSFile const char *name, short mode)
 	/* activate the fp, default is to close non-standard files on exec */
 	FP_DONE (p, fp, fd, FD_CLOEXEC);
 
-# if O_GLOBAL
-	if (global)
-		/* we just opened a global handle */
-		fd += 100;
-# endif
-
 	TRACE (("Fopen: returning %d", fd));
 	return fd;
 
-  error:
+error:
 	if (fd >= MIN_OPEN) FD_REMOVE (p, fd);
 	if (fp) { fp->links--; FP_FREE (fp); }
 
@@ -120,7 +76,7 @@ sys_f_open (MetaDOSFile const char *name, short mode)
 long _cdecl
 sys_f_create (MetaDOSFile const char *name, short attrib)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *fp = NULL;
 	short fd = MIN_OPEN - 1;
 	long ret;
@@ -148,15 +104,15 @@ sys_f_create (MetaDOSFile const char *name, short attrib)
 		char temp1[PATH_MAX];
 		fcookie dir;
 
-#ifndef ARAnyM_MetaDOS
+#if 0
 		/* just in case the caller tries to do something with this handle,
 		 * make it point to u:\dev\null
 		 */
 		ret = do_open (&fp, "u:\\dev\\null", O_RDWR|O_CREAT|O_TRUNC, 0, NULL);
 		if (ret) goto error;
-#endif // ARAnyM_MetaDOS
+#endif
 
-		ret = path2cookie (name, temp1, &dir);
+		ret = path2cookie (p, name, temp1, &dir);
 		if (ret) goto error;
 
 		ret = xfs_writelabel (dir.fs, &dir, temp1);
@@ -174,7 +130,7 @@ sys_f_create (MetaDOSFile const char *name, short attrib)
 		ret = do_open (&fp, name, O_RDWR|O_CREAT|O_TRUNC, attrib, NULL);
 		if (ret)
 		{
-			DEBUG (("Fcreate(%s) failed, error %d", name, ret));
+			DEBUG (("Fcreate(%s) failed, error %ld", name, ret));
 			goto error;
 		}
 	}
@@ -185,7 +141,7 @@ sys_f_create (MetaDOSFile const char *name, short attrib)
 	TRACE (("Fcreate: returning %d", fd));
 	return fd;
 
-  error:
+error:
 	if (fd >= MIN_OPEN) FD_REMOVE (p, fd);
 	if (fp) { fp->links--; FP_FREE (fp); }
 	return ret;
@@ -194,12 +150,23 @@ sys_f_create (MetaDOSFile const char *name, short attrib)
 long _cdecl
 sys_f_close (MetaDOSFile short fd)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *f;
 	long r;
 
-	TRACE (("Fclose: %d", fd));
+	DEBUG (("Fclose: %d", fd));
 
+# ifdef WITH_SINGLE_TASK_SUPPORT
+	/* this is for pure-debugger:
+	 * some progs call Fclose(-1) when they exit which would
+	 * cause pd to lose keyboard
+	 */
+	if( fd < 0 && (p->modeflags & M_SINGLE_TASK) )
+	{
+		DEBUG(("Fclose:return 0 for negative fd in singletask-mode."));
+		return 0;
+	}
+# endif
 	r = GETFILEPTR (&p, &fd, &f);
 	if (r) return r;
 
@@ -237,7 +204,7 @@ sys_f_close (MetaDOSFile short fd)
 long _cdecl
 sys_f_read (MetaDOSFile short fd, long count, char *buf)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *f;
 	long r;
 
@@ -250,17 +217,25 @@ sys_f_read (MetaDOSFile short fd, long count, char *buf)
 		return EACCES;
 	}
 
+	if (f->flags & O_DIRECTORY)
+	{
+		DEBUG (("Fread(%i): read on a directory", fd));
+		return EISDIR;
+	}
+
+#if 0
 	if (is_terminal (f))
 		return tty_read (f, buf, count);
+#endif
 
-	TRACELOW (("Fread: %ld bytes from handle %d to %lx", count, fd, buf));
+	TRACELOW (("Fread: %ld bytes from handle %d to %p", count, fd, buf));
 	return xdd_read (f, buf, count);
 }
 
 long _cdecl
 sys_f_write (MetaDOSFile short fd, long count, const char *buf)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *f;
 	long r;
 
@@ -273,8 +248,10 @@ sys_f_write (MetaDOSFile short fd, long count, const char *buf)
 		return EACCES;
 	}
 
+#if 0
 	if (is_terminal (f))
 		return tty_write (f, buf, count);
+#endif
 
 	/* Prevent broken device drivers from wiping the disk.
 	 * We return a zero rather than a negative error code
@@ -283,7 +260,7 @@ sys_f_write (MetaDOSFile short fd, long count, const char *buf)
 	 */
 	if (count <= 0)
 	{
-		DEBUG (("Fwrite: invalid count: %d", count));
+		DEBUG (("Fwrite: invalid count: %ld", count));
 		return 0;
 	}
 
@@ -314,7 +291,7 @@ sys_f_write (MetaDOSFile short fd, long count, const char *buf)
 long _cdecl
 sys_f_seek (MetaDOSFile long place, short fd, short how)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *f;
 	long r;
 
@@ -323,8 +300,10 @@ sys_f_seek (MetaDOSFile long place, short fd, short how)
 	r = GETFILEPTR (&p, &fd, &f);
 	if (r) return r;
 
+#if 0
 	if (is_terminal (f))
-		return 0;
+		return ESPIPE;
+#endif
 
 	r = xdd_lseek (f, place, how);
 	TRACE (("Fseek: returning %ld", r));
@@ -335,7 +314,7 @@ sys_f_seek (MetaDOSFile long place, short fd, short how)
 long _cdecl
 sys_f_datime (MetaDOSFile ushort *timeptr, short fd, short wflag)
 {
-	PROC *p = curproc;
+	struct proc *p = get_curproc();
 	FILEPTR *f;
 	long r;
 
@@ -344,26 +323,350 @@ sys_f_datime (MetaDOSFile ushort *timeptr, short fd, short wflag)
 	r = GETFILEPTR (&p, &fd, &f);
 	if (r) return r;
 
+#if 0
 	/* some programs use Fdatime to test for TTY devices */
 	if (is_terminal (f))
 		return EACCES;
+#endif
 
 	if (f->fc.fs && f->fc.fs->fsflags & FS_EXT_3)
 	{
-		ulong t = 0;
-		/* long r; */
-
+		unsigned long ut = 0;
 		if (wflag)
-			t = unixtime (timeptr [0], timeptr [1]) + timezone;
-
-		r = xdd_datime (f, (ushort *) &t, wflag);
-
-		if (!r && !wflag)
-			*(long *) timeptr = dostime (t - timezone);
-
+			ut = unixtime(timeptr[0], timeptr[1]) + timezone;
+		r = xdd_datime(f, (ushort *)&ut, wflag);
+		if (!r && !wflag) {
+			ut = dostime(ut - timezone);
+			timeptr[1] = (unsigned short)ut;
+			ut >>= 16;
+			timeptr[0] = (unsigned short)ut;
+		}
 		return r;
 	}
 
 	return xdd_datime (f, timeptr, wflag);
+}
+
+/*
+ * extensions to GEMDOS:
+ */
+
+static long
+sys__ffstat_1_12 (struct file *f, XATTR *xattr)
+{
+	long ret;
+
+#if 0
+# ifdef OLDSOCKDEVEMU
+	if (f->dev == &sockdev || f->dev == &sockdevemu)
+# else
+	if (f->dev == &sockdev)
+# endif
+		return so_fstat_old (f, xattr);
+#endif
+
+	if (!f->fc.fs)
+	{
+		DEBUG (("sys__ffstat_1_12: no xfs!"));
+		return ENOSYS;
+	}
+
+	ret = xdd_ioctl(f, FSTAT, xattr);
+	if (ret == ENOSYS)
+		ret = xfs_getxattr (f->fc.fs, &f->fc, xattr);
+	if ((ret == E_OK) && (f->fc.fs->fsflags & FS_EXT_3))
+	{
+		xtime_to_local_dos(xattr,m);
+		xtime_to_local_dos(xattr,a);
+		xtime_to_local_dos(xattr,c);
+	}
+
+	return ret;
+}
+
+static long
+sys__ffstat_1_16 (struct file *f, struct stat *st)
+{
+	long ret;
+
+#if 0
+# ifdef OLDSOCKDEVEMU
+	if (f->dev == &sockdev || f->dev == &sockdevemu)
+# else
+	if (f->dev == &sockdev)
+# endif
+		return so_fstat (f, st);
+#endif
+
+	if (!f->fc.fs)
+	{
+		DEBUG (("sys__ffstat_1_16: no xfs"));
+		return ENOSYS;
+	}
+
+	ret = xdd_ioctl(f, FSTAT64, st);
+	if (ret == ENOSYS)
+		ret = xfs_stat64 (f->fc.fs, &f->fc, st);
+	return ret;
+}
+
+long _cdecl
+sys_ffstat (MetaDOSFile short fd, struct stat *st)
+{
+	struct proc *p = get_curproc();
+	FILEPTR	*f;
+	long ret;
+
+	ret = GETFILEPTR (&p, &fd, &f);
+	if (ret) return ret;
+
+	return sys__ffstat_1_16 (f, st);
+}
+
+/*
+ * f_cntl: a combination "ioctl" and "fcntl". Some functions are
+ * handled here, if they apply to the file descriptors directly
+ * (e.g. F_DUPFD) or if they're easily translated into file system
+ * functions (e.g. FSTAT). Others are passed on to the device driver
+ * via dev->ioctl.
+ */
+
+long _cdecl
+sys_f_cntl (MetaDOSFile short fd, long arg, short cmd)
+{
+	struct proc *p = get_curproc();
+	FILEPTR	*f;
+	long r;
+
+	TRACE (("Fcntl(%i, cmd=0x%x)", fd, cmd));
+
+	if (cmd == F_DUPFD || cmd == F_DUPFD_CLOEXEC) {
+#if 0
+  		return do_dup (fd, arg, cmd == F_DUPFD_CLOEXEC ? 1: 0);
+#else
+		return ENOSYS;
+#endif
+	}
+
+	TRACE(("Fcntl getfileptr"));
+	r = GETFILEPTR (&p, &fd, &f);
+	TRACE(("Fcntl r = %lx", r));
+	if (r) return r;
+
+	switch (cmd)
+	{
+		case F_GETFD:
+			TRACE (("Fcntl F_GETFD"));
+#if 0
+			return p->p_fd->ofileflags[fd];
+#else
+			return 0;
+#endif
+		case F_SETFD:
+			TRACE (("Fcntl F_SETFD"));
+#if 0
+			p->p_fd->ofileflags[fd] = arg;
+#endif
+			return E_OK;
+		case F_GETFL:
+			TRACE (("Fcntl F_GETFL"));
+			return (f->flags & O_USER);
+		case F_SETFL:
+			TRACE (("Fcntl F_SETFL"));
+
+			/* make sure only user bits set */
+			arg &= O_USER;
+
+			/* make sure the file access and sharing modes are not changed */
+			arg &= ~(O_RWMODE | O_SHMODE);
+			arg |= f->flags & (O_RWMODE | O_SHMODE);
+
+			/* set user bits to arg */
+			f->flags &= ~O_USER;
+			f->flags |= arg;
+
+			return E_OK;
+		case FSTAT:
+			TRACE (("Fcntl FSTAT (%i, %lx) on \"%s\" -> %li", fd, arg, xfs_name (&(f->fc)), r));
+			return sys__ffstat_1_12 (f, (XATTR *) arg);
+		case FSTAT64:
+			TRACE (("Fcntl FSTAT64 (%i, %lx) on \"%s\" -> %li", fd, arg, xfs_name(&(f->fc)), r));
+			return sys__ffstat_1_16 (f, (struct stat *) arg);
+		case FUTIME:
+			TRACE (("Fcntl FUTIME"));
+			if (f->fc.fs && (f->fc.fs->fsflags & FS_EXT_3) && arg)
+			{
+				MUTIMBUF *buf = (MUTIMBUF *) arg;
+				ulong t [2];
+
+				t[0] = unixtime (buf->actime, buf->acdate) + timezone;
+				t[1] = unixtime (buf->modtime, buf->moddate) + timezone;
+				return xdd_ioctl (f, FUTIME_UTC, (void *) t);
+			}
+			break;
+	}
+
+	/* fall through to device ioctl */
+
+	TRACE (("Fcntl mode %x: calling ioctl", cmd));
+#if 0
+	if (is_terminal (f))
+	{
+		/* tty in the middle of a hangup? */
+		while (((struct tty *) f->devinfo)->hup_ospeed)
+			sleep (IO_Q, (long) &((struct tty *) f->devinfo)->state);
+
+		if (cmd == FIONREAD
+			|| cmd == FIONWRITE
+			|| cmd == TIOCSTART
+			|| cmd == TIOCSTOP
+			|| cmd == TIOCSBRK
+			|| cmd == TIOCFLUSH)
+		{
+			r = tty_ioctl (f, cmd, (void *) arg);
+		}
+		else
+		{
+			r = (*f->dev->ioctl)(f, cmd, (void *) arg);
+			if (r == ENOSYS)
+				r = tty_ioctl (f, cmd, (void *) arg);
+		}
+	}
+	else
+#endif
+		r = xdd_ioctl (f, cmd, (void *) arg);
+
+	return r;
+}
+
+
+/*
+ * GEMDOS extension: Ffchown(fh, uid, gid) changes the user and group
+ * ownerships of a open file to "uid" and "gid" respectively.
+ */
+
+long _cdecl
+sys_f_fchown (MetaDOSFile short fd, short uid, short gid)
+{
+	struct proc *p = get_curproc();
+	FILEPTR *f;
+	long r;
+
+	TRACE (("Ffchown(%d,%i,%i)", fd, uid, gid));
+
+	r = GETFILEPTR (&p, &fd, &f);
+	if (r) return r;
+
+	if (!(f->fc.fs))
+	{
+		DEBUG (("Ffchown: not a valid filesystem"));
+		return ENOSYS;
+	}
+
+	if ((f->flags & O_RWMODE) == O_RDONLY)
+	{
+		DEBUG (("Ffchown: write on a read-only handle"));
+		return EPERM;
+	}
+
+	/* MiNT acts like _POSIX_CHOWN_RESTRICTED: a non-privileged process
+	 * can only change the ownership of a file that is owned by this
+	 * user, to the effective group id of the process or one of its
+	 * supplementary groups
+	 */
+#if 0
+	if (p->p_cred->ucr->euid)
+	{
+		XATTR xattr;
+
+		if (p->p_cred->ucr->egid != gid && !groupmember (p->p_cred->ucr, gid))
+			r = EACCES;
+		else
+			r = xfs_getxattr (f->fc.fs, &(f->fc), &xattr);
+
+		if (r)
+		{
+			DEBUG (("Ffchown(%i): unable to get file attributes", fd));
+			return r;
+		}
+
+		if (xattr.uid != p->p_cred->ucr->euid || xattr.uid != uid)
+		{
+			DEBUG (("Ffchown(%i): not the file's owner", fd));
+			return EACCES;
+		}
+
+		r = xfs_chown (f->fc.fs, &(f->fc), uid, gid);
+
+		/* POSIX 5.6.5.2: if name refers to a regular file the
+		 * set-user-ID and set-group-ID bits of the file mode shall
+		 * be cleared upon successful return from the call to chown,
+		 * unless the call is made by a process with the appropriate
+		 * privileges. Note that POSIX leaves the behaviour
+		 * unspecified for all other file types. At least for
+		 * directories with BSD-like setgid semantics, these bits
+		 * should be left unchanged.
+		 */
+		if (!r && !S_ISDIR(xattr.mode)
+			&& (xattr.mode & (S_ISUID | S_ISGID)))
+		{
+			long s;
+
+			s = xfs_chmode (f->fc.fs, &(f->fc), xattr.mode & ~(S_ISUID | S_ISGID));
+			if (!s)
+				DEBUG (("Ffchown: chmode returned %ld (ignored)", s));
+		}
+	}
+	else
+#endif
+		r = xfs_chown (f->fc.fs, &(f->fc), uid, gid);
+
+	return r;
+}
+
+/*
+ * GEMDOS extension: Fchmod (fh, mode) changes a file's access
+ * permissions on a open file.
+ */
+
+long _cdecl
+sys_f_fchmod (MetaDOSFile short fd, ushort mode)
+{
+	struct proc *p = get_curproc();
+	FILEPTR *f;
+	long r;
+	XATTR xattr;
+
+	TRACE (("Ffchmod(%i, %i)", fd, mode));
+
+	r = GETFILEPTR (&p, &fd, &f);
+	if (r) return r;
+
+	if (!(f->fc.fs))
+	{
+		DEBUG (("Ffchmod: not a valid filesystem"));
+		return ENOSYS;
+	}
+
+	r = xfs_getxattr (f->fc.fs, &(f->fc), &xattr);
+	if (r)
+	{
+		DEBUG (("Ffchmod(%i): couldn't get file attributes", fd));
+	}
+#if 0
+	else if (p->p_cred->ucr->euid && p->p_cred->ucr->euid != xattr.uid)
+	{
+		DEBUG (("Ffchmod(%i): not the file's owner", fd));
+		r = EACCES;
+	}
+#endif
+	else
+	{
+		r = xfs_chmode (f->fc.fs, &(f->fc), mode & ~S_IFMT);
+		if (r)
+			DEBUG (("Ffchmod: error %ld", r));
+	}
+
+	return r;
 }
 

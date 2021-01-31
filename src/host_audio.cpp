@@ -32,14 +32,16 @@
 
 extern "C" {
 	static void UpdateAudio(void *unused, Uint8 *stream, int len) {
-		DUNUSED(unused);
+		UNUSED(unused);
 
 		if (!host) {
 			return;
 		}
 
 		/* SDL 1.3 will require the application to clear the buffer */
-		//memset(stream, 0, len);
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+		memset(stream, 0, len);
+#endif
 
 		for (int i=0; i<MAX_AUDIO_CALLBACKS; i++) {
 			if (host->audio.callbacks[i]) {
@@ -47,7 +49,7 @@ extern "C" {
 			}
 		}
 	}
-};
+}
 
 /*--- Constructor/destructor of HostAudio class ---*/
 
@@ -60,31 +62,43 @@ HostAudio::HostAudio()
 		userdatas[i]=NULL;
 	}
 
+	memset(&desired, 0, sizeof(desired));
 	desired.freq = bx_options.audio.freq;
 	desired.format = (bx_options.audio.bits == 8) ? AUDIO_S8 : AUDIO_S16SYS;
 	desired.channels = bx_options.audio.chans;
 	desired.samples = bx_options.audio.samples;
 	desired.callback = UpdateAudio;
 	desired.userdata = NULL;
+	D(bug("HostAudio: desired: %d Hz, %s format, %d channels, %d samples",
+		desired.freq, HostAudio::FormatName(desired.format),
+		desired.channels, desired.samples));
 
-	if (SDL_OpenAudio(&desired, &obtained)<0) {
+	if (SDL_OpenAudio(&desired, &obtained)<0)
+	{
 		fprintf(stderr,"Could not open audio: %s\n", SDL_GetError());
 		return;
 	}
 
 #if DEBUG
 	{
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+		const char *name = SDL_GetCurrentAudioDriver();
+		D(bug("HostAudio: device %s opened", name ? name : "(none)"));
+#else
 		char name[32];
 		if (SDL_AudioDriverName(name, 31)) {
 			D(bug("HostAudio: device %s opened", name));
 		}
-		D(bug("HostAudio: %d Hz, 0x%04x format, %d channels, %d samples, %d bytes",
-			obtained.freq, obtained.format,
+#endif
+		D(bug("HostAudio: %d Hz, %s format, %d channels, %d samples, %d bytes",
+			obtained.freq, HostAudio::FormatName(obtained.format),
 			obtained.channels, obtained.samples, obtained.size));
 	}
 #endif
 
-	SDL_PauseAudio(0);
+	enabled = bx_options.audio.enabled;
+	recording = false;
+	Enable(enabled);
 }
 
 HostAudio::~HostAudio()
@@ -98,6 +112,7 @@ HostAudio::~HostAudio()
 
 void HostAudio::reset(void)
 {
+	StopRecording();
 /*
 	SDL_LockAudio();
 
@@ -108,6 +123,13 @@ void HostAudio::reset(void)
 
 	SDL_UnlockAudio();
 */
+}
+
+void HostAudio::Enable(bool enable)
+{
+	enabled = enable;
+	if (SDL_WasInit(SDL_INIT_AUDIO))
+		SDL_PauseAudio(enable ? SDL_FALSE : SDL_TRUE);
 }
 
 void HostAudio::AddCallback(audio_callback_f callback, void *userdata)
@@ -145,4 +167,19 @@ void HostAudio::RemoveCallback(audio_callback_f callback)
 	}
 
 	SDL_UnlockAudio();
+}
+
+/* used for debugging only */
+const char *HostAudio::FormatName(Uint16 format)
+{
+	switch (format)
+	{
+		case AUDIO_U8: return "8bit/unsigned";
+		case AUDIO_S8: return "8bit/signed";
+		case AUDIO_U16LSB: return "16bit/unsigned/le";
+		case AUDIO_S16LSB: return "16bit/signed/le";
+		case AUDIO_U16MSB: return "16bit/unsigned/be";
+		case AUDIO_S16MSB: return "16bit/signed/be";
+	}
+	return "unknown";
 }

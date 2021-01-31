@@ -28,19 +28,22 @@
 
 BootOs *bootOs = NULL;
 
-void BootOs::init(void)
+void BootOs::init(bool cold)
 {
+	if (cold)
+		memset(RAMBaseHost, rand(), RAMSize);
 	/* Setting "SP & PC" for CPU with ROM based OS (TOS, EmuTOS) */
 	for (int i=0; i<8; i++) {
 		RAMBaseHost[i] = ROMBaseHost[i];
 	}
 }
 
-void BootOs::reset(void)
+void BootOs::reset(bool cold)
 {
+	init(cold);
 }
 
-void BootOs::load(const char *filename) throw (AranymException)
+void BootOs::load(const char *filename) ARANYM_THROWS(AranymException)
 {
 	D(bug("Reading OS ROM image '%s'", filename));
 	FILE *f = fopen(filename, "rb");

@@ -1,6 +1,6 @@
 # generic defines used by all distributions.
 #
-%define ver			1.0.2
+%define ver			1.1.0
 
 #
 #
@@ -85,6 +85,10 @@
 %define	rel			%{myrelease}.suse%(echo $[%suse_version/10]).%{mybuild}
 %else
 %define	rel			%{myrelease}.sles%{sles_version}.%{mybuild}
+%endif
+
+%if %suse_version >= 930
+%define debugrpm 1
 %endif
 
 %define	group			%{suse_group}
@@ -219,7 +223,7 @@ Version:		%{ver}
 Release:		%{rel}
 License:		GPLv2
 Summary:		32-bit Atari personal computer (similar to Falcon030 but better) virtual machine
-URL:			http://aranym.org/
+URL:			https://aranym.github.io/
 Group:			%{group}
 Source0:		http://prdownloads.sourceforge.net/aranym/%{name}_%{version}.orig.tar.gz
 BuildRoot:		%{_tmppath}/%{name}-%{version}-%{release}-buildroot
@@ -239,7 +243,7 @@ Authors:
 Ctirad Fertr, Milan Jurik, Standa Opichal, Petr Stehlik, Johan Klockars,
 Didier MEQUIGNON, Patrice Mandin and others (see AUTHORS for a full list).
 
-
+%{?debugrpm:%debug_package}
 %prep
 %setup -q
 #%%patch0
@@ -372,6 +376,9 @@ install -m 644 contrib/%{name}-mmu.desktop %{buildroot}%{_datadir}/applications/
 
 
 %changelog
+* Tue Feb 06 2018 Thorsten Otto <admin@tho-otto.de>
+URL changed to aranym.github.io. Also updated in NEWS/README files.
+
 * Wed Oct 10 2014 Petr Stehlik <pstehlik@sophics.cz> 1.0.0
 New ARAnyM release.
 Reset the minimal SDL version down to 1.2.12

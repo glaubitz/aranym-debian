@@ -25,7 +25,6 @@
 #define DEBUG 0
 #include "debug.h"
 
-#include <windows.h>
 #include <winioctl.h>
 
 #ifdef HAVE_SYS_SOCKET_H
@@ -84,7 +83,7 @@ static char *winerror(int err) {
 	if (!FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 	        NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, sizeof(buf), NULL)) {
 		strncpy(buf, "(unable to format errormessage)", sizeof(buf));
-	};
+	}
 
 	if((newline = strchr(buf, '\r')))
 		*newline = '\0';
@@ -104,6 +103,10 @@ WinTapEthernetHandler::WinTapEthernetHandler(int eth_idx)
 	device_total_out = 0;
 }
 
+WinTapEthernetHandler::~WinTapEthernetHandler()
+{
+	close();
+}
 
 bool is_tap_win32_dev(const char *guid)
 {
@@ -324,9 +327,17 @@ int get_device_guid(
 
 bool WinTapEthernetHandler::open()
 {
+	char *type = bx_options.ethernet[ethX].type;
 	char device_path[256];
 	char device_guid[0x100];
-	char name_buffer[0x100] = {0, };
+	char name_buffer[0x100];
+
+	close();
+
+	if (strcmp(type, "none") == 0 || strlen(type) == 0)
+	{
+		return false;
+	}
 
 	if ( strlen(bx_options.ethernet[ethX].tunnel) == 0) {
 		D(bug("WinTap(%d): tunnel name undefined", ethX));
@@ -338,7 +349,7 @@ bool WinTapEthernetHandler::open()
  	if ( get_device_guid(device_guid, sizeof(device_guid), name_buffer, sizeof(name_buffer)) < 0 ) {
 		panicbug("WinTap: ERROR: Could not find Windows tap device: %s", winerror(GetLastError()));
 		return false;
-	};
+	}
 
 	/*
 	 * Open Windows TAP-Win32 adapter
@@ -354,7 +365,8 @@ bool WinTapEthernetHandler::open()
 		panicbug("WinTap: ERROR: Could not open (%s) Windows tap device: %s", device_path, winerror(GetLastError()));
 		return false;
 	}
-
+	device = strdup(device_path);
+	
 	read_overlapped.Offset = 0; 
 	read_overlapped.OffsetHigh = 0; 
 	read_overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -366,10 +378,15 @@ bool WinTapEthernetHandler::open()
 	return true;
 }
 
-bool WinTapEthernetHandler::close()
+void WinTapEthernetHandler::close()
 {
-	CloseHandle(device_handle);
-	return true;
+	if (device_handle != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(device_handle);
+		device_handle = INVALID_HANDLE_VALUE;
+	}
+	free(device);
+	device = NULL;
 }
 
 int WinTapEthernetHandler::recv(uint8 *buf, int len)
@@ -423,4 +440,3 @@ int WinTapEthernetHandler::send(const uint8 *buf, int len)
 	D(bug("WinTap: Writing packet done"));
 	return lenout;
 }
-

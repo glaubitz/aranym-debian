@@ -35,6 +35,7 @@
 #include "parameters.h"
 #include "version.h"
 #include "main.h"	/* QuitEmulator */
+#include "input.h"
 
 #define DEBUG 0
 #include "debug.h"
@@ -42,10 +43,36 @@
 HostScreenOpenGL::HostScreenOpenGL(void)
 	: HostScreen()
 {
-	if (dyngl_load(bx_options.opengl.library)==0) {
-		fprintf(stderr, "Can not load OpenGL library: using software rendering mode\n");
-		bx_options.opengl.enabled = false;
+	int res;
+	char **path;
+	
+	res = -1;
+	path = split_pathlist(bx_options.opengl.library);
+	if (path != NULL)
+	{
+		for (int i = 0; res < 0 && path[i] != NULL; i++)
+			res = dyngl_load(path[i]);
+		free(path);
 	}
+	if (res<0) {
+		res = dyngl_load(NULL);
+	}
+	if (res<0) {
+		bug("Can not load OpenGL library: using software rendering mode");
+		bx_options.opengl.enabled = false;
+	} else if (res == 0) {
+		bug("Loaded default OpenGL library");
+	}
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	window = NULL;
+	window_id = 0;
+	renderer = NULL;
+	texture = NULL;
+#ifdef SDL_GUI
+	gui_window = NULL;
+	gui_window_id = 0;
+#endif
+#endif
 }
 
 HostScreenOpenGL::~HostScreenOpenGL()
@@ -119,13 +146,37 @@ void HostScreenOpenGL::setVideoMode(int width, int height, int bpp)
 		}
 	}
 
-	window = SDL_CreateWindow(VERSION_STRING, x, y, width, height, windowFlags);
-	if (window==NULL) {
-		panicbug("Could not create window: %s", SDL_GetError());
-		QuitEmulator();
-		return;
-	}
+	SDL_DisplayMode mode, oldmode;
+
+	if (window)
+		SDL_GetWindowDisplayMode(window, &oldmode);
+	else
+		memset(&oldmode, 0, sizeof(oldmode));
 	
+	mode.w = width;
+	mode.h = height;
+
+	if (window == NULL ||
+		width != oldmode.w ||
+		height != oldmode.h)
+	{
+		if (window == NULL)
+		{
+			window = SDL_CreateWindow(version_string, x, y, width, height, windowFlags);
+			if (window)
+			{
+				SDL_GetWindowDisplayMode(window, &mode);
+			}
+		}
+		if (window==NULL) {
+			panicbug("Could not create window: %s", SDL_GetError());
+			QuitEmulator();
+			return;
+		}
+		window_id = SDL_GetWindowID(window);
+		SDL_SetWindowSize(window, width, height);
+	}
+		
 	/* SDL2FIXME: find appropriate renderer for bpp */
 	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
@@ -176,6 +227,8 @@ void HostScreenOpenGL::setVideoMode(int width, int height, int bpp)
 
 	SetWMIcon();
 
+	PendingConfigureNotifyWidth = width;
+	PendingConfigureNotifyHeight = height;
 	/* Now setup video mode */
 	for (i=0;i<4;i++) {
 		screen = SDL_SetVideoMode(width, height, gl_bpp[i], screenFlags);
@@ -225,9 +278,6 @@ void HostScreenOpenGL::makeSnapshot(void)
 		return HostScreen::makeSnapshot();
 	}
 
-	char filename[15];
-	sprintf( filename, "snap%03d.bmp", snapCounter++ );
-
 	HostSurface *sshot_hsurf = createSurface(getWidth(), getHeight(), 32);
 	if (!sshot_hsurf) {
 		return;
@@ -244,7 +294,7 @@ void HostScreenOpenGL::makeSnapshot(void)
 			dst += sdl_surf->pitch;
 		}
 
-		SDL_SaveBMP(sdl_surf, filename);
+		writeSnapshot(sdl_surf);
 #else
 		fprintf(stderr, "screenshot: Sorry, BGRA texture format not supported\n");
 #endif

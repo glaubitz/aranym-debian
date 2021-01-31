@@ -12,12 +12,19 @@
 #import <unistd.h>
 #import "parameters.h"
 
-
 static int gArgc;
 static char **gArgv;
 static BOOL gFinderLaunch;
 static BOOL gCalledAppMainline = FALSE;
 char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
+
+
+/* these were renamed in SDK 10.12 and above */
+#if !defined(MAC_OS_X_VERSION_10_12) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
+#define NSAlertStyleWarning NSWarningAlertStyle
+#define NSAlertStyleInformational NSInformationalAlertStyle
+#define NSAlertStyleCritical NSCriticalAlertStyle
+#endif
 
 
 @interface NSApplication (SDLApplication)
@@ -73,8 +80,8 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 {
 	SDL_Event event;
 	event.type = SDL_KEYDOWN;
-	event.key.keysym.sym = bx_options.hotkeys.reboot.sym;
-	event.key.keysym.mod = bx_options.hotkeys.reboot.mod;
+	event.key.keysym.sym = bx_options.hotkeys.warmreboot.sym;
+	event.key.keysym.mod = bx_options.hotkeys.warmreboot.mod;
 	SDL_PushEvent(&event);
 }
 
@@ -132,19 +139,32 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 		currentPath = [[currentPath stringByExpandingTildeInPath] stringByStandardizingPath];
 		[fileManager fileExistsAtPath: currentPath isDirectory: &isDirectory];
 		[currentPath getCString: gAranymFilesDirectory maxLength: MAXPATHLEN encoding: NSUTF8StringEncoding];
-		printf("--> %s %d\n", gAranymFilesDirectory, isDirectory);
 		
 		if (isDirectory)
 			//  it's a valid and existing directory
 			break;
 	}
 	
-	//	 if Preferences folder couldn't be found, take first choise
+	//	 if Preferences folder couldn't be found, take last choice
 	if (currentPath == nil)
-		currentPath = [[[searchPaths objectAtIndex: 0] stringByExpandingTildeInPath] stringByStandardizingPath];
+		currentPath = [[[searchPaths lastObject] stringByExpandingTildeInPath] stringByStandardizingPath];
 
 	//	 store this path, convert it to a C string and copy into buffer
-	[currentPath getCString: gAranymFilesDirectory maxLength: MAXPATHLEN encoding: NSUTF8StringEncoding];
+	[currentPath getFileSystemRepresentation: gAranymFilesDirectory maxLength: MAXPATHLEN];
+	char realPath[MAXPATHLEN];	 // Temporary storage for the resolved path
+	realpath(gAranymFilesDirectory, realPath);
+	strncpy(gAranymFilesDirectory, realPath, MAXPATHLEN);
+}
+
+
+-(void) applicationWillFinishLaunching:(NSNotification *)notification
+{
+#if defined(MAC_OS_X_VERSION_10_12) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12)
+	if (NSAppKitVersionNumber > 1500)
+	{
+		[NSWindow setAllowsAutomaticWindowTabbing: NO];
+	}
+#endif
 }
 
 
@@ -172,6 +192,47 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 @end
 
 
+void guialert(const char *fmt, ...)
+{
+	va_list args;
+	char *buf = NULL;
+	int ret;
+	
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	fputs("\n", stderr);
+	va_end(args);
+	va_start(args, fmt);
+	ret = vasprintf(&buf, fmt, args);
+	va_end(args);
+	if (ret >= 0)
+	{
+		NSRunAlertPanel (@"Error:", @"%s", @"Ok", nil, nil, buf);
+		free(buf);
+	}
+}
+
+
+#if !SDL_VERSION_ATLEAST(2, 0, 0)
+SDL_GLContext SDL_GL_GetCurrentContext(void)
+{
+	return [NSOpenGLContext currentContext];
+}
+#endif
+
+
+/*
+ * Only called with ctx != 0,
+ * to restore the current SDL context
+ */
+void SDL_GL_SetCurrentContext(SDL_GLContext ctx)
+{
+    NSAutoreleasePool *pool;
+    pool = [[NSAutoreleasePool alloc] init];
+	NSOpenGLContext *nscontext = (NSOpenGLContext *)ctx;
+	[nscontext makeCurrentContext];
+    [pool release];
+}
 
 
 #ifdef main
@@ -179,12 +240,35 @@ char gAranymFilesDirectory[MAXPATHLEN];	 // Path to the "AranymFiles" folder
 #endif
 
 
+static int IsRootCwd(void)
+{
+    char buf[MAXPATHLEN];
+    char *cwd = getcwd(buf, sizeof (buf));
+    return cwd != NULL && strcmp(cwd, "/") == 0;
+}
+
+static int IsFinderLaunch(int argc, char **argv)
+{
+    /* -psn_XXX is passed if we are launched from Finder, SOMETIMES */
+    if ( (argc >= 2) && (strncmp(argv[1], "-psn", 4) == 0) ) {
+        return 1;
+    } else if ((argc == 1) && IsRootCwd()) {
+        /* we might still be launched from the Finder; on 10.9+, you might not
+        get the -psn command line anymore. If there's no
+        command line, and if our current working directory is "/", it
+        might as well be a Finder launch. */
+        return 1;
+    }
+    return 0;  /* not a Finder launch. */
+}
+
+
 /* Main entry point to executable - should *not* be SDL_main! */
 int main (int argc, char **argv)
 {
 	/* Copy the arguments into a global variable */
 	/* This is passed if we are launched by double-clicking */
-	if ( argc >= 2 && strncmp (argv[1], "-psn", 4) == 0 ) 
+	if (IsFinderLaunch(argc, argv))
 	{
 		gArgv = (char **) SDL_malloc(sizeof (char *) * 2);
 		gArgv[0] = argv[0];

@@ -19,8 +19,11 @@
 struct regstruct regs;
 struct flag_struct regflags;
 #ifdef EXCEPTIONS_VIA_LONGJMP
-sigjmp_buf excep_env;
+JMP_BUF excep_env;
 #endif
+JMP_BUF sigsegv_env;
+int in_handler;
+void breakpt(void) { }
 
 // RAM and ROM pointers
 memptr RAMBase = 0;	// RAM base (Atari address space) gb-- init is important
@@ -168,14 +171,17 @@ bool InitMEM() {
 
 uae_u32 HWget_l (uaecptr addr) {
 	BUS_ERROR(addr);
+	return 0;
 }
 
 uae_u16 HWget_w (uaecptr addr) {
 	BUS_ERROR(addr);
+	return 0;
 }
 
 uae_u8 HWget_b (uaecptr addr) {
 	BUS_ERROR(addr);
+	return 0;
 }
 
 void HWput_l (uaecptr addr, uae_u32 value) {
@@ -220,7 +226,7 @@ int main(int argc, char **argv)
 	char *VOLATILE outname = 0;
 	FILE *VOLATILE out;
 	int c;
-	int retval = 0;
+	int VOLATILE retval = 0;
 	uint8 *dst;
 	
 	regs.sr = 0x2700;
@@ -475,7 +481,7 @@ int main(int argc, char **argv)
 	disasm_info.memory_vma = vma;
 	while (len > 0)
 	{
-		isize = m68k_disasm_to_buf(&disasm_info, buf);
+		isize = m68k_disasm_to_buf(&disasm_info, buf, TRUE);
 		fputs(buf, out);
 		fputs("\n", out);
 		if (isize < 0)

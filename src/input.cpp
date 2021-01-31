@@ -42,7 +42,6 @@
 #include "debug.h"
 
 #include "SDL_compat.h"
-#include <SDL_syswm.h>
 #include "clipbrd.h"
 
 /* Joysticks */
@@ -100,7 +99,8 @@ SDL_Joystick *sdl_joysticks[4]={
 
 static SDL_bool grabbedMouse = SDL_FALSE;
 static SDL_bool hiddenMouse = SDL_FALSE;
-static SDL_Cursor *aranym_cursor = NULL;
+SDL_Cursor *aranym_cursor = NULL;
+SDL_Cursor *empty_cursor = NULL;
 
 static const char *arrow[] = {
   /* width height num_colors chars_per_pixel */
@@ -179,30 +179,47 @@ static SDL_Cursor *init_system_cursor(const char *image[])
   return SDL_CreateCursor(data, mask, 32, 32, hot_x, hot_y);
 }
 
+
+static SDL_Cursor *init_empty_cursor()
+{
+	Uint8 data[4*16];
+	Uint8 mask[4*16];
+	
+	memset(data, 0, sizeof(data));
+	memset(mask, 0, sizeof(mask));
+	return SDL_CreateCursor(data, mask, 16, 16, 0, 0);
+}
+
+
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 static int SDLCALL event_filter(void * /* userdata */, SDL_Event *event)
 #else
 static int SDLCALL event_filter(const SDL_Event *event)
 #endif
 {
+#if defined(NFCLIPBRD_SUPPORT)
 	if (filter_aclip(event) == 0) return 0;
+#endif
+	UNUSED(event);
 	return 1;
 }
 
 void InputInit()
 {
 	aranym_cursor = init_system_cursor(arrow);
+	empty_cursor = init_empty_cursor();
 	SDL_SetCursor(aranym_cursor);
 	if (bx_options.startup.grabMouseAllowed) {
 		// warp mouse to center of Atari 320x200 screen and grab it
-		if (! bx_options.video.fullscreen)
-			host->video->WarpMouse(320/2, 200/2);
 		grabMouse(SDL_TRUE);
 		// hide mouse unconditionally
 		hideMouse(SDL_TRUE);
+		if (! bx_options.video.fullscreen)
+		{
+			host->video->WarpMouse(0, 0);
+		}
 	}
 
-/* SDL2CHECKME: SDL_HAS3BUTTONMOUSE seems to be no longer needed */
 #if defined (OS_darwin) && !SDL_VERSION_ATLEAST(2, 0, 0)
 	// Make sure ALT+click is not interpreted as SDL_MIDDLE_BUTTON
 	SDL_putenv((char*)"SDL_HAS3BUTTONMOUSE=1");
@@ -244,6 +261,9 @@ void InputExit()
 	}
 
 	SDL_FreeCursor(aranym_cursor);
+	aranym_cursor = NULL;
+	SDL_FreeCursor(empty_cursor);
+	empty_cursor = NULL;
 }
 
 /*********************************************************************
@@ -276,8 +296,8 @@ static int keysymToAtari(SDL_Keysym keysym)
 	int sym = keysym.scancode;
 
 	switch (keysym.sym) {
-	  case SDLK_LMETA:
-	  case SDLK_RMETA:
+	  case SDLK_LGUI:
+	  case SDLK_RGUI:
 		#if MAP_META_TO_CONTROL
 		  return 0x1D;
 		#else		
@@ -312,7 +332,11 @@ static int keysymToAtari(SDL_Keysym keysym)
 			return i;
 		}
 	}
-	panicbug ("scancode mac:%x is not mapped", keysym.scancode);
+	if (keysym.scancode != 0)
+	bug("keycode: %d (0x%x), scancode %d (0x%x), keysym '%s' is not mapped",
+		keysym.sym, keysym.sym,
+		keysym.scancode, keysym.scancode,
+		SDL_GetKeyName(keysym.sym));
 	
 	return 0;	/* invalid scancode */
 }
@@ -362,7 +386,7 @@ static int keysymToAtari(SDL_Keysym keysym)
 #if !SDL_VERSION_ATLEAST(2, 0, 0)
 static int findScanCodeOffset(SDL_keysym keysym)
 {
-	int scanPC = keysym.scancode;
+	unsigned int scanPC = keysym.scancode;
 	int offset = UNDEFINED_OFFSET;
 
 	switch(keysym.sym) {
@@ -577,6 +601,7 @@ static int keysymToAtari(SDL_Keysym keysym)
 		return scanPC - offset;
 #endif
 
+	if (keysym.scancode != 0)
 	bug("keycode: %d (0x%x), scancode %d (0x%x), keysym '%s' is not mapped",
 		keysym.sym, keysym.sym,
 		keysym.scancode, keysym.scancode,
@@ -667,7 +692,26 @@ SDL_bool hideMouse(SDL_bool hide)
 	return SDL_FALSE;
 }
 
-#define CHECK_HOTKEY(Hotkey) ((bx_options.hotkeys.Hotkey.sym == 0 || sym == bx_options.hotkeys.Hotkey.sym) && masked_mod == bx_options.hotkeys.Hotkey.mod)
+HOTKEY check_hotkey(int state, SDL_Keycode sym)
+{
+#define CHECK_HOTKEY(Hotkey) \
+	if (bx_options.hotkeys.Hotkey.sym != 0 && sym == bx_options.hotkeys.Hotkey.sym && state == bx_options.hotkeys.Hotkey.mod) \
+		return HOTKEY_ ## Hotkey; \
+	if (bx_options.hotkeys.Hotkey.sym == 0 && bx_options.hotkeys.Hotkey.mod != 0 && state == bx_options.hotkeys.Hotkey.mod) \
+		return HOTKEY_ ## Hotkey
+	CHECK_HOTKEY(setup);
+	CHECK_HOTKEY(quit);
+	CHECK_HOTKEY(warmreboot);
+	CHECK_HOTKEY(coldreboot);
+	CHECK_HOTKEY(debug);
+	CHECK_HOTKEY(ungrab);
+	CHECK_HOTKEY(screenshot);
+	CHECK_HOTKEY(fullscreen);
+	CHECK_HOTKEY(sound);
+#undef CHECK_HOTKEY
+	return HOTKEY_none;
+}
+
 static void process_keyboard_event(const SDL_Event &event)
 {
 	SDL_Keysym keysym = event.key.keysym;
@@ -694,9 +738,13 @@ static void process_keyboard_event(const SDL_Event &event)
 			case Dialog::GUI_CLOSE:
 				close_GUI();
 				break;
-			case Dialog::GUI_REBOOT:
+			case Dialog::GUI_WARMREBOOT:
 				close_GUI();
 				RestartAll();
+				break;
+			case Dialog::GUI_COLDREBOOT:
+				close_GUI();
+				RestartAll(true);
 				break;
 			case Dialog::GUI_SHUTDOWN:
 				close_GUI();
@@ -742,22 +790,38 @@ static void process_keyboard_event(const SDL_Event &event)
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	if (event.key.windowID != video->window_id)
 		return;
+	if (event.key.repeat > 0)
+		return;
+#endif
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+	/* SDL on windows does not report KMOD_CTRL on right ctrl key */
+	if (keysym.sym == SDLK_RCTRL)
+		state = pressed ? (state | KMOD_CTRL) : (state & ~KMOD_CTRL);
 #endif
 
 	// process special hotkeys
+	int masked_mod = state & HOTKEYS_MOD_MASK;
+	HOTKEY hotkey = check_hotkey(masked_mod, sym);
 	if (pressed) {
-		int masked_mod = state & HOTKEYS_MOD_MASK;
-
-		if (CHECK_HOTKEY(quit)) {
+		switch (hotkey)
+		{
+		case HOTKEY_none:
+			break;
+		case HOTKEY_quit:
 			pendingQuit = true;
 			send2Atari = false;
-		}
-		else if (CHECK_HOTKEY(reboot)) {
-			RestartAll();	// force Cold Reboot
+			break;
+		case HOTKEY_warmreboot:
+			RestartAll();	// force Warm Reboot
 			send2Atari = false;
-		}
+			break;
+		case HOTKEY_coldreboot:
+			RestartAll(true);	// force Cold Reboot
+			send2Atari = false;
+			break;
+		case HOTKEY_setup:
 #ifdef SDL_GUI
-		else if (CHECK_HOTKEY(setup)) {
 			/* release shifters (if any) */
 			if ( bx_options.hotkeys.setup.mod & KMOD_LSHIFT )
 				getIKBD()->SendKey(0x80 | 0x2a);
@@ -772,34 +836,40 @@ static void process_keyboard_event(const SDL_Event &event)
 			
 			open_GUI();
 			send2Atari = false;
-		}
 #endif
+			break;
+		case HOTKEY_debug:
 #ifdef DEBUGGER
-		else if (CHECK_HOTKEY(debug)) {
-			video->releaseTheMouse();
-			video->CanGrabMouseAgain(false);	// let it leave our window
 			// activate debugger
 			activate_debugger();
 			send2Atari = false;
-		}
 #endif
-		else if (CHECK_HOTKEY(ungrab)) {
+			break;
+		case HOTKEY_ungrab:
 			if ( bx_options.video.fullscreen )
 				video->toggleFullScreen();
 			video->releaseTheMouse();
 			video->CanGrabMouseAgain(false);	// let it leave our window
 			send2Atari = false;
-		}
-		else if (CHECK_HOTKEY(screenshot)) {
+			break;
+		case HOTKEY_screenshot:
 			video->doScreenshot();
 			send2Atari = false;
-		}
-		else if (CHECK_HOTKEY(fullscreen)) {
+			break;
+		case HOTKEY_fullscreen:
 			video->toggleFullScreen();
 			if (bx_options.video.fullscreen && !video->GrabbedMouse())
 				video->grabTheMouse();
 			send2Atari = false;
+			break;
+		case HOTKEY_sound:
+			host->audio.ToggleAudio();
+			send2Atari = false;
+			break;
 		}
+	} else if (hotkey != HOTKEY_none)
+	{
+		send2Atari = false;
 	}
 
 	// map special keys to Atari range of scancodes
@@ -925,9 +995,13 @@ static void process_mouse_event(const SDL_Event &event)
 			case Dialog::GUI_CLOSE:
 				close_GUI();
 				break;
-			case Dialog::GUI_REBOOT:
+			case Dialog::GUI_WARMREBOOT:
 				close_GUI();
 				RestartAll();
+				break;
+			case Dialog::GUI_COLDREBOOT:
+				close_GUI();
+				RestartAll(true);
 				break;
 			case Dialog::GUI_SHUTDOWN:
 				close_GUI();
@@ -999,16 +1073,15 @@ static void process_mouse_event(const SDL_Event &event)
 		}
 	}
 	else if (event.type == SDL_MOUSEMOTION) {
-		SDL_MouseMotionEvent eve = event.motion;
 		if (!video->IgnoreMouseMotionEvent()) {
-			xrel = eve.xrel;
-			yrel = eve.yrel;
+			xrel = event.motion.xrel;
+			yrel = event.motion.yrel;
 		}
 		else video->IgnoreMouseMotionEvent(false);
 
 #ifdef NFVDI_SUPPORT
 		if (fvdi != NULL) {
-			if (fvdi->dispatch(0x80008000 | (eve.x << 16) | (eve.y)) == 0)
+			if (fvdi->dispatch(0x80008000 | (event.motion.x << 16) | (event.motion.y)) == 0)
 				fvdi_events = true;
 		}
 
@@ -1016,14 +1089,21 @@ static void process_mouse_event(const SDL_Event &event)
 		// if the events are reported directly, since it only
 		// works with hidden mouse pointer.
 		// So, define top left corner as exit point.
-		mouse_exit = (eve.x == 0) && (eve.y == 0);
+		mouse_exit = (event.motion.x == 0) && (event.motion.y == 0);
 #endif
-		if ((xrel <= 0 && eve.x <= 0) ||
-			(yrel <= 0 && eve.y <= 0) ||
-			(xrel >= 0 && eve.x >= video->getWidth() - 1) ||
-			(yrel >= 0 && eve.y >= video->getHeight() - 1))
+#ifdef __ANDROID__
+		if (getARADATA()->isAtariMouseDriver()) {
+			xrel = event.motion.x - getARADATA()->getAtariMouseX();
+			yrel = event.motion.y - getARADATA()->getAtariMouseY();
+		}
+#endif
+		
+		if (!bx_options.startup.grabMouseAllowed && (
+			(xrel <= 0 && event.motion.x <= 0) ||
+			(yrel <= 0 && event.motion.y <= 0) ||
+			(xrel >= 0 && event.motion.x >= video->getWidth() - 1) ||
+			(yrel >= 0 && event.motion.y >= video->getHeight() - 1)))
 			mouseOut = true;
-
 	}
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	else if (event.type == SDL_MOUSEWHEEL) {
@@ -1053,7 +1133,7 @@ static void process_mouse_event(const SDL_Event &event)
 			reported = true;
 		}
 #endif
-		if (!bx_options.video.fullscreen && mouse_exit)
+		if (!bx_options.video.fullscreen && mouse_exit && !bx_options.startup.grabMouseAllowed)
 			mouseOut = true;
 		return;
 	}
@@ -1070,7 +1150,7 @@ static void process_mouse_event(const SDL_Event &event)
 		getIKBD()->SendMouseMotion(xrel, yrel, but, false);
 	}
 
-	if (! bx_options.video.fullscreen && getARADATA()->isAtariMouseDriver()) {
+	if (! bx_options.video.fullscreen && !bx_options.startup.grabMouseAllowed && getARADATA()->isAtariMouseDriver()) {
 		// check whether user doesn't try to go out of window (top or left)
 		if ((xrel < 0 && getARADATA()->getAtariMouseX() == 0) ||
 			(yrel < 0 && getARADATA()->getAtariMouseY() == 0))
@@ -1080,8 +1160,8 @@ static void process_mouse_event(const SDL_Event &event)
 		int hostw = video->getWidth();
 		int hosth = video->getHeight();
 
-		if ((xrel > 0 && getARADATA()->getAtariMouseX() >= (int32) hostw - 1) ||
-			(yrel > 0 && getARADATA()->getAtariMouseY() >= (int32) hosth - 1))
+		if ((xrel > 0 && getARADATA()->getAtariMouseX() >= hostw - 1) ||
+			(yrel > 0 && getARADATA()->getAtariMouseY() >= hosth - 1))
 			mouseOut = true;
 	}
 }
@@ -1180,7 +1260,7 @@ static void process_active_event(const SDL_Event &event)
 				else {
 					D(bug("Host mouse is returning!"));
 					// if grabbing the mouse is allowed
-					if (video->CanGrabMouseAgain() && video->HasInputFocus()) {
+					if (video->CanGrabMouseAgain() && (video->HasInputFocus() || bx_options.startup.grabMouseAllowed)) {
 						D(bug("canGrabMouseAgain allows autograb"));
 						// then grab it
 						video->grabTheMouse();
@@ -1243,7 +1323,7 @@ static void process_joystick_event(const SDL_Event &event)
 void check_event()
 {
 	HostScreen *video;
-
+	
 	if (host == NULL || (video = host->video) == NULL)
 		return;
 	

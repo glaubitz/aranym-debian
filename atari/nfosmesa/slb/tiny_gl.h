@@ -23,15 +23,24 @@
 # endif
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * load & initialize TinyGL
  */
-long slb_load_tiny_gl(const char *libname, const char *path, long min_version);
+struct gl_public *slb_load_tiny_gl(const char *path);
 
 /*
  * unload TinyGL
  */
-void slb_unload_tiny_gl(void);
+void slb_unload_tiny_gl(struct gl_public *pub);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 
 
@@ -44,7 +53,7 @@ extern "C" {
 #endif
 
 #ifndef APIENTRY
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
 #define APIENTRY __stdcall
 #elif defined(__PUREC__)
 #define APIENTRY __CDECL
@@ -57,6 +66,9 @@ extern "C" {
 #endif
 #ifndef GLAPIENTRY
 #define GLAPIENTRY APIENTRY
+#endif
+#ifndef APIENTRYP
+#define APIENTRYP APIENTRY *
 #endif
 #ifndef GLAPI
 #define GLAPI extern
@@ -667,6 +679,7 @@ typedef void GLvoid;
 #define GL_EXTENSIONS						0x1F03
 
 /* Errors */
+#define GL_NO_ERROR                         0
 #define GL_INVALID_VALUE					0x0501
 #define GL_INVALID_ENUM						0x0500
 #define GL_INVALID_OPERATION				0x0502
@@ -953,9 +966,21 @@ GLAPI void GLAPIENTRY glPolygonOffset(GLfloat factor, GLfloat units);
 #endif /* GL_VERSION_1_1 */
 
 #ifndef GL_VERSION_1_5
-#define GL_VERSION_1_5 1
-typedef ptrdiff_t GLintptr;
+#ifndef __GLintptr_defined
+#include <stddef.h>
+#ifdef __APPLE__
+typedef intptr_t GLsizeiptr;
+typedef intptr_t GLintptr;
+#else
 typedef ptrdiff_t GLsizeiptr;
+typedef ptrdiff_t GLintptr;
+#endif
+#define __GLintptr_defined
+#endif
+#endif
+
+#ifdef __NFOSMESA_H__
+#include <GL/glext.h>
 #endif
 
 #ifndef GL_VERSION_2_0
@@ -965,8 +990,13 @@ typedef char GLchar;
 
 #ifndef GL_ARB_vertex_buffer_object
 #define GL_ARB_vertex_buffer_object 1
+#ifdef __APPLE__
+typedef intptr_t GLsizeiptrARB;
+typedef intptr_t GLintptrARB;
+#else
 typedef ptrdiff_t GLsizeiptrARB;
 typedef ptrdiff_t GLintptrARB;
+#endif
 #endif
 
 #ifndef GL_NV_half_float
@@ -1019,7 +1049,11 @@ typedef GLint GLfixed;
 #ifndef GL_ARB_shader_objects
 #define GL_ARB_shader_objects 1
 typedef char GLcharARB;
+#ifdef __APPLE__
+typedef void *GLhandleARB;
+#else
 typedef GLuint GLhandleARB;
+#endif
 #endif
 
 #ifndef GL_KHR_debug
@@ -1037,6 +1071,14 @@ typedef void CALLBACK (*GLDEBUGPROCAMD)(GLuint id,GLenum category, GLenum severi
 #ifndef GL_MESA_program_debug
 #define GL_MESA_program_debug 1
 typedef void CALLBACK (*GLprogramcallbackMESA)(GLenum target, GLvoid *data);
+#endif
+#ifndef GL_EXT_external_buffer
+#define GL_EXT_external_buffer 1
+typedef void *GLeglClientBufferEXT;
+#endif
+#ifndef GL_NV_draw_vulkan_image
+#define GL_NV_draw_vulkan_image 1
+typedef void (APIENTRY *GLVULKANPROCNV)(void);
 #endif
 
 
@@ -1091,7 +1133,7 @@ struct osmesa_context { int dummy; };
 #endif
 typedef struct osmesa_context *OSMesaContext;
 
-typedef void (*OSMESAproc)(void);
+typedef void (APIENTRY *OSMESAproc)(void);
 
 GLAPI OSMesaContext GLAPIENTRY OSMesaCreateContext( GLenum format, OSMesaContext sharelist );
 GLAPI OSMesaContext GLAPIENTRY OSMesaCreateContextExt( GLenum format, GLint depthBits, GLint stencilBits, GLint accumBits, OSMesaContext sharelist);
@@ -1108,7 +1150,7 @@ GLAPI void GLAPIENTRY OSMesaPostprocess(OSMesaContext osmesa, const char *filter
 
 
 #elif OSMESA_VERSION < OSMESA_VERSION_NUMBER(6, 3, 0)
-typedef void (*OSMESAproc)(void);
+typedef void (APIENTRY *OSMESAproc)(void);
 #endif
 
 /*
@@ -1136,10 +1178,24 @@ typedef GLhalfNV GLhalfNV32;
 #endif
 #endif
 
+/*
+ * Atari-specific structure for the shared libraries
+ */
+struct gl_public {
+	void *libhandle;
+	void *libexec;
+	void *(*m_alloc)(size_t);
+	void (*m_free)(void *);
+};
+
 #ifdef __cplusplus
 }
 #endif
 
+#undef glClearDepth
+#undef glFrustum
+#undef glOrtho
+#undef gluLookAt
 
 /*
  * old LDG functions
@@ -1154,7 +1210,7 @@ GLAPI GLsizei GLAPIENTRY max_width(void);
 GLAPI GLsizei GLAPIENTRY max_height(void);
 GLAPI void GLAPIENTRY swapbuffer(void *buf);
 GLAPI void GLAPIENTRY exception_error(void CALLBACK (*exception)(GLenum param));
-GLAPI void GLAPIENTRY information(void);
+GLAPI void GLAPIENTRY tinyglinformation(void);
 
 GLAPI void GLAPIENTRY glOrthof(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near_val, GLfloat far_val);
 GLAPI void GLAPIENTRY glFrustumf(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near_val, GLfloat far_val);
@@ -1249,8 +1305,6 @@ struct _gl_tiny {
 };
 
 extern struct _gl_tiny gl;
-extern SLB_HANDLE gl_slb;
-extern SLB_EXEC gl_exec;
 
 #ifdef __cplusplus
 }
@@ -1441,6 +1495,10 @@ extern SLB_EXEC gl_exec;
 #undef gluLookAt
 #define gluLookAt gluLookAtf
 
+/* fix bad name */
+#undef information
+#define tinyglinformation gl.information
+
 
 
 /*
@@ -1448,6 +1506,10 @@ extern SLB_EXEC gl_exec;
  */
 #undef glFinish
 #define glFinish()
+
+/* fix bad name */
+#undef information
+#define tinyglinformation gl.information
 
 /*
  * Functions from OpenGL that are not implemented in TinyGL

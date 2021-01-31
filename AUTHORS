@@ -108,6 +108,9 @@ Thorsten Otto
 - SDL2 support
 - disassembler
 
+Uwe Seimet
+- SCSI Driver for Linux
+
 ---
 
 ARAnyM source code consists of several parts. Some were taken from other
@@ -239,3 +242,6 @@ Anders Eriksson
 
 David Gálvez
 - USB NatFeat support
+
+Miro Kropacek <miro.kropacek@gmail.com>
+- host file execution NatFeat support

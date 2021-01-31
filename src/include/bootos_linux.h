@@ -60,8 +60,8 @@ class LinuxBootOs : public BootOs
 		unsigned long bi_size;
 
 		void cleanup(void);
-		void init(void);
-		void *loadFile(char *filename, unsigned long *length);
+		void init(bool cold);
+		void *loadFile(const char *filename, unsigned long *length);
 		int checkKernel(void);
 		int create_bootinfo(void);
 		int add_bi_record(
@@ -69,10 +69,11 @@ class LinuxBootOs : public BootOs
 		int add_bi_string(unsigned short tag, const char *s);
 
 	public:
-		LinuxBootOs(void) throw (AranymException);
+		LinuxBootOs(void) ARANYM_THROWS(AranymException);
 		virtual ~LinuxBootOs(void);
 
-		virtual void reset(void) throw (AranymException);
+		virtual void reset(bool cold) ARANYM_THROWS(AranymException);
+		virtual const char *type() { return "LILO"; };
 };
 
 #endif /* BOOTOSLINUX_H */

@@ -20,7 +20,7 @@
 
 #include "sysdeps.h"
 #include <cstdio>
-#include "memory.h"
+#include "memory-uae.h"
 #include "readcpu.h"
 #include "newcpu.h"
 #include "main.h"
@@ -112,10 +112,17 @@ get_cur_prec ()
 #define DEFAULT_NAN_BITS 0xffffffffffffffffULL
 
 static void
-set_nan (fpu_register &reg, uae_u64 nan_bits)
+set_nan (fpu_register &reg, uae_u64 nan_bits, int nan_sign)
 {
   mpfr_set_nan (reg.f);
   reg.nan_bits = nan_bits;
+  reg.nan_sign = nan_sign;
+}
+
+static void
+set_nan (fpu_register &reg)
+{
+  set_nan (reg, DEFAULT_NAN_BITS, 0);
 }
 
 static bool fpu_inited;
@@ -141,28 +148,29 @@ fpu_init (bool integral_68040)
   mpfr_const_pi (fpu_constant_rom[0], MPFR_RNDN);
   // 11: log10 (2)
   mpfr_set_ui (fpu_constant_rom[11], 2, MPFR_RNDN);
-  mpfr_log10 (fpu_constant_rom[11], fpu_constant_rom[11], MPFR_RNDN);
+  mpfr_log10 (fpu_constant_rom[11], fpu_constant_rom[11], MPFR_RNDZ);
   // 12: e
   mpfr_set_ui (fpu_constant_rom[12], 1, MPFR_RNDN);
-  mpfr_exp (fpu_constant_rom[12], fpu_constant_rom[12], MPFR_RNDN);
+  mpfr_exp (fpu_constant_rom[12], fpu_constant_rom[12], MPFR_RNDZ);
   // 13: log2 (e)
-  mpfr_log2 (fpu_constant_rom[13], fpu_constant_rom[12], MPFR_RNDN);
+  mpfr_log2 (fpu_constant_rom[13], fpu_constant_rom[12], MPFR_RNDU);
   // 14: log10 (e)
-  mpfr_log10 (fpu_constant_rom[14], fpu_constant_rom[12], MPFR_RNDN);
+  mpfr_log10 (fpu_constant_rom[14], fpu_constant_rom[12], MPFR_RNDU);
   // 15: 0
   mpfr_set_zero (fpu_constant_rom[15], 0);
   // 48: ln (2)
-  mpfr_set_ui (fpu_constant_rom[16], 2, MPFR_RNDN);
-  mpfr_log (fpu_constant_rom[16], fpu_constant_rom[16], MPFR_RNDN);
+  mpfr_const_log2 (fpu_constant_rom[16], MPFR_RNDN);
   // 49: ln (10)
-  mpfr_set_ui (fpu_constant_rom[17], 2, MPFR_RNDN);
-  mpfr_log10 (fpu_constant_rom[17], fpu_constant_rom[17], MPFR_RNDN);
+  mpfr_set_ui (fpu_constant_rom[17], 10, MPFR_RNDN);
+  mpfr_log (fpu_constant_rom[17], fpu_constant_rom[17], MPFR_RNDN);
   // 50 to 63: powers of 10
   mpfr_set_ui (fpu_constant_rom[18], 1, MPFR_RNDN);
-  mpfr_set_ui (fpu_constant_rom[19], 10, MPFR_RNDN);
-  for (int i = 20; i < 31; i++)
-    mpfr_sqr (fpu_constant_rom[i], fpu_constant_rom[i - 1], MPFR_RNDN);
-
+  for (int i = 19; i < 32; i++)
+  {
+    mpfr_set_ui (fpu_constant_rom[i], 1L << (i - 19) , MPFR_RNDN);
+    mpfr_exp10 (fpu_constant_rom[i], fpu_constant_rom[i], MPFR_RNDN);
+  }
+  
   fpu_inited = true;
 
   fpu_reset ();
@@ -188,12 +196,21 @@ fpu_reset ()
   fpu.instruction_address = 0;
 
   for (int i = 0; i < 8; i++)
-    set_nan (fpu.registers[i], DEFAULT_NAN_BITS);
+    set_nan (fpu.registers[i]);
 }
 
 fpu_register::operator long double ()
 {
   return mpfr_get_ld (f, MPFR_RNDN);
+}
+
+fpu_register &
+fpu_register::operator= (long double x)
+{
+  mpfr_set_ld (f, x, MPFR_RNDN);
+  nan_bits = DEFAULT_NAN_BITS;
+  nan_sign = 0;
+  return *this;
 }
 
 static bool
@@ -266,7 +283,7 @@ set_from_single (fpu_register &value, uae_u32 data)
 	{
 	  if (!(m & 0x400000))
 	    cur_exceptions |= FPSR_EXCEPTION_SNAN;
-	  set_nan (value, (uae_u64) (m | 0xc00000) << (32 + 8));
+	  set_nan (value, (uae_u64) (m | 0xc00000) << (32 + 8), s);
 	}
       else
 	mpfr_set_inf (value.f, 0);
@@ -299,7 +316,7 @@ set_from_double (fpu_register &value, uae_u32 words[2])
 	  if (!(m & 0x80000))
 	    cur_exceptions |= FPSR_EXCEPTION_SNAN;
 	  set_nan (value, (((uae_u64) (m | 0x180000) << (32 + 11))
-			   | ((uae_u64) words[1] << 11)));
+			   | ((uae_u64) words[1] << 11)), s);
 	}
       else
 	mpfr_set_inf (value.f, 0);
@@ -335,7 +352,7 @@ set_from_extended (fpu_register &value, uae_u32 words[3], bool check_snan)
 		cur_exceptions |= FPSR_EXCEPTION_SNAN;
 	      words[1] |= 0x40000000;
 	    }
-	  set_nan (value, ((uae_u64) words[1] << 32) | words[2]);
+	  set_nan (value, ((uae_u64) words[1] << 32) | words[2], s);
 	}
       else
 	mpfr_set_inf (value.f, 0);
@@ -366,7 +383,8 @@ set_from_packed (fpu_register &value, uae_u32 words[3])
 	{
 	  if ((words[1] & 0x40000000) == 0)
 	    cur_exceptions |= FPSR_EXCEPTION_SNAN;
-	  set_nan (value, ((uae_u64) (words[1] | 0x40000000) << 32) | words[2]);
+	  set_nan (value, ((uae_u64) (words[1] | 0x40000000) << 32) | words[2],
+		   sm);
 	}
       else
 	mpfr_set_inf (value.f, 0);
@@ -409,6 +427,7 @@ get_fp_value (uae_u32 opcode, uae_u32 extra, fpu_register &value)
     {
       mpfr_set (value.f, fpu.registers[(extra >> 10) & 7].f, MPFR_RNDN);
       value.nan_bits = fpu.registers[(extra >> 10) & 7].nan_bits;
+      value.nan_sign = fpu.registers[(extra >> 10) & 7].nan_sign;
       /* Check for SNaN.  */
       if (mpfr_nan_p (value.f) && (value.nan_bits & (1ULL << 62)) == 0)
 	{
@@ -561,7 +580,7 @@ update_exceptions ()
     aexc |= FPSR_ACCR_INEX;
   set_accrued_exception (aexc);
 
-  if ((fpu.fpcr.exception_enable & exc) != 0)
+  if ((fpu.fpcr & exc) != 0)
     {
       fpu.instruction_address = cur_instruction_address;
       // TODO: raise exceptions
@@ -571,12 +590,13 @@ update_exceptions ()
 }
 
 static void
-set_fp_register (int reg, mpfr_t value, uae_u64 nan_bits,
+set_fp_register (int reg, mpfr_t value, uae_u64 nan_bits, int nan_sign,
 		 int t, mpfr_rnd_t rnd, bool do_flags)
 {
   mpfr_subnormalize (value, t, rnd);
   mpfr_set (fpu.registers[reg].f, value, rnd);
   fpu.registers[reg].nan_bits = nan_bits;
+  fpu.registers[reg].nan_sign = nan_sign;
   if (do_flags)
     {
       uae_u32 flags = 0;
@@ -591,6 +611,20 @@ set_fp_register (int reg, mpfr_t value, uae_u64 nan_bits,
 	flags |= FPSR_CCB_INFINITY;
       set_fpccr (flags);
     }
+}
+
+static void
+set_fp_register (int reg, mpfr_t value, int t, mpfr_rnd_t rnd, bool do_flags)
+{
+  set_fp_register (reg, value, DEFAULT_NAN_BITS, 0, t, rnd, do_flags);
+}
+
+static void
+set_fp_register (int reg, fpu_register &value, int t, mpfr_rnd_t rnd,
+		 bool do_flags)
+{
+  set_fp_register (reg, value.f, value.nan_bits, value.nan_sign, t, rnd,
+		   do_flags);
 }
 
 static uae_u32
@@ -618,6 +652,8 @@ extract_to_single (fpu_register &value)
 	  cur_exceptions |= FPSR_EXCEPTION_SNAN;
 	}
       word = 0x7f800000 | ((value.nan_bits >> (32 + 8)) & 0x7fffff);
+      if (value.nan_sign)
+	word |= 0x80000000;
     }
   else if (mpfr_zero_p (single))
     word = 0;
@@ -678,6 +714,8 @@ extract_to_double (fpu_register &value, uint32_t *words)
 	}
       words[0] = 0x7ff00000 | ((value.nan_bits >> (32 + 11)) & 0xfffff);
       words[1] = value.nan_bits >> 11;
+      if (value.nan_sign)
+	words[0] |= 0x80000000;
     }
   else if (mpfr_zero_p (dbl))
     {
@@ -729,6 +767,8 @@ extract_to_extended (fpu_register &value, uint32_t *words)
       words[0] = 0x7fff0000;
       words[1] = value.nan_bits >> 32;
       words[2] = value.nan_bits;
+      if (value.nan_sign)
+	words[0] |= 0x80000000;
     }
   else if (mpfr_zero_p (value.f))
     {
@@ -780,6 +820,8 @@ extract_to_packed (fpu_register &value, int k, uae_u32 *words)
       words[0] = 0x7fff0000;
       words[1] = value.nan_bits >> 32;
       words[2] = value.nan_bits;
+      if (value.nan_sign)
+	words[0] |= 0x80000000;
     }
   else if (mpfr_zero_p (value.f))
     {
@@ -1470,6 +1512,7 @@ fpuop_general (uae_u32 opcode, uae_u32 extra)
 
   mpfr_init2 (value.f, prec);
   value.nan_bits = DEFAULT_NAN_BITS;
+  value.nan_sign = 0;
 
   mpfr_clear_flags ();
   set_format (prec);
@@ -1485,7 +1528,7 @@ fpuop_general (uae_u32 opcode, uae_u32 extra)
 	t = mpfr_set (value.f, fpu_constant_rom[rom_index - 32], rnd);
       else
 	mpfr_set_zero (value.f, 0);
-      set_fp_register (reg, value.f, value.nan_bits, t, rnd, true);
+      set_fp_register (reg, value, t, rnd, true);
     }
   else if (extra & 0x40)
     {
@@ -1579,7 +1622,7 @@ fpuop_general (uae_u32 opcode, uae_u32 extra)
 	  t = mpfr_sub (value2, fpu.registers[reg].f, value.f, rnd);
 	  break;
 	}
-      set_fp_register (reg, value2, value.nan_bits, t, rnd, true);
+      set_fp_register (reg, value2, t, rnd, true);
     }
   else if ((extra & 0x30) == 0x30)
     {
@@ -1604,8 +1647,8 @@ fpuop_general (uae_u32 opcode, uae_u32 extra)
 	    cur_exceptions |= FPSR_EXCEPTION_OPERR;
 	  t = mpfr_sin_cos (value.f, value2, value.f, rnd);
 	  if (reg2 != reg)
-	    set_fp_register (reg2, value2, value.nan_bits, t >> 2, rnd, false);
-	  set_fp_register (reg, value.f, value.nan_bits, t & 3, rnd, true);
+	    set_fp_register (reg2, value2, t >> 2, rnd, false);
+	  set_fp_register (reg, value, t & 3, rnd, true);
 	}
       else if ((extra & 15) == 8)
 	// FCMP
@@ -1726,12 +1769,14 @@ fpuop_general (uae_u32 opcode, uae_u32 extra)
 	  break;
 	case 24: // FABS
 	  t = mpfr_abs (value.f, value.f, rnd);
+	  value.nan_sign = 0;
 	  break;
 	case 25: // FCOSH
 	  t = mpfr_cosh (value.f, value.f, rnd);
 	  break;
 	case 26: // FNEG
 	  t = mpfr_neg (value.f, value.f, rnd);
+	  value.nan_sign = !value.nan_sign;
 	  break;
 	case 28: // FACOS
 	  if (mpfr_cmpabs (value.f, FPU_CONSTANT_ONE) > 0)
@@ -1819,7 +1864,7 @@ fpuop_general (uae_u32 opcode, uae_u32 extra)
 	  t = mpfr_sub (value.f, fpu.registers[reg].f, value.f, rnd);
 	  break;
 	}
-      set_fp_register (reg, value.f, value.nan_bits, t, rnd, true);
+      set_fp_register (reg, value, t, rnd, true);
     }
   update_exceptions ();
   ret = true;
@@ -2042,4 +2087,24 @@ fpuop_restore (uae_u32 opcode)
     addr += (format & 0xff0000) >> 16;
   if ((opcode & 070) == 030)
     m68k_areg (regs, opcode & 7) = addr;
+}
+
+void fpu_set_fpsr(uae_u32 new_fpsr)
+{
+	set_fpsr(new_fpsr);
+}
+
+uae_u32 fpu_get_fpsr(void)
+{
+	return get_fpsr();
+}
+
+void fpu_set_fpcr(uae_u32 new_fpcr)
+{
+	set_fpcr(new_fpcr);
+}
+
+uae_u32 fpu_get_fpcr(void)
+{
+	return get_fpcr();
 }

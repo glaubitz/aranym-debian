@@ -144,7 +144,7 @@
 # include <cstdio>
 
 #include "sysdeps.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "readcpu.h"
 #include "newcpu.h"
 #define FPU_IMPLEMENTATION
@@ -417,17 +417,17 @@ When the FPU creates a NAN, the NAN always contains the same bit pattern
 in the mantissa. All bits of the mantissa are ones for any precision.
 When the user creates a NAN, any nonzero bit pattern can be stored in the mantissa.
 */
-PRIVATE inline void FFPU MAKE_NAN (fpu_register & f)
+PRIVATE inline void FFPU MAKE_NAN (fpu_register & f, bool negative)
 {
 	// Make it non-signaling.
 	uae_u8 * p = (uae_u8 *) &f;
 	memset( p, 0xFF, sizeof(fpu_register) - 1 );
-	p[9] = 0x7F;
+	p[9] = negative ? 0xff : 0x7F;
 }
 
 /*
 For single- and double-precision infinities the fraction is a zero.
-For extended-precision infinities, the mantissa’s MSB, the explicit
+For extended-precision infinities, the mantissaï¿½s MSB, the explicit
 integer bit, can be either one or zero.
 */
 PRIVATE inline uae_u32 FFPU IS_INFINITY (fpu_register const & f)
@@ -3195,7 +3195,7 @@ PRIVATE void FFPU do_null_frestore ()
 {
 	// A null-restore operation sets FP7-FP0 positive, nonsignaling NANs.
 	for( int i=0; i<8; i++ ) {
-		MAKE_NAN( FPU registers[i] );
+		MAKE_NAN( FPU registers[i], false );
 	}
 
 	FPU instruction_address = 0;
@@ -5619,7 +5619,7 @@ PRIVATE void REGPARAM2 FFPU fpuop_do_fgetexp( uae_u32 opcode, uae_u32 extra )
 	D(bug("FGETEXP %s\r\n",etos(src)));
 
 	if( IS_INFINITY(src) ) {
-		MAKE_NAN( FPU registers[reg] );
+		MAKE_NAN( FPU registers[reg], IS_NEGATIVE(src) );
 		do_ftst( FPU registers[reg] );
 		x86_status_word |= SW_IE;
 	} else {
@@ -5640,7 +5640,7 @@ PRIVATE void REGPARAM2 FFPU fpuop_do_fgetman( uae_u32 opcode, uae_u32 extra )
 	}
 	D(bug("FGETMAN %s\r\n",etos(src)));
 	if( IS_INFINITY(src) ) {
-		MAKE_NAN( FPU registers[reg] );
+		MAKE_NAN( FPU registers[reg], IS_NEGATIVE(src) );
 		do_ftst( FPU registers[reg] );
 		x86_status_word |= SW_IE;
 	} else {
@@ -5768,7 +5768,7 @@ PRIVATE void REGPARAM2 FFPU fpuop_do_fscale( uae_u32 opcode, uae_u32 extra )
 	}
 	D(bug("FSCALE %s, opcode=%X, extra=%X, ta %X\r\n",etos(src),opcode,extra,m68k_getpc()));
 	if( IS_INFINITY(FPU registers[reg]) ) {
-		MAKE_NAN( FPU registers[reg] );
+		MAKE_NAN( FPU registers[reg], IS_NEGATIVE(FPU registers[reg]) );
 		do_ftst( FPU registers[reg] );
 		x86_status_word |= SW_IE;
 	} else {
@@ -6670,6 +6670,26 @@ PRIVATE void FFPU do_fld1 ( fpu_register & dest )
 }
 
 
+void fpu_set_fpsr(uae_u32 new_fpsr)
+{
+	set_fpsr(new_fpsr);
+}
+
+uae_u32 fpu_get_fpsr(void)
+{
+	return get_fpsr();
+}
+
+void fpu_set_fpcr(uae_u32 new_fpcr)
+{
+	set_fpcr(new_fpcr);
+}
+
+uae_u32 fpu_get_fpcr(void)
+{
+	return get_fpcr();
+}
+
 /* ---------------------------- MAIN INIT ---------------------------- */
 
 #ifdef HAVE_SIGACTION
@@ -6716,7 +6736,7 @@ PUBLIC void FFPU fpu_init( bool integral_68040 )
 	FPU fpsr.quotient = 0;
 
 	for( int i=0; i<8; i++ ) {
-		MAKE_NAN( FPU registers[i] );
+		MAKE_NAN( FPU registers[i], false );
 	}
 	
 	build_fpp_opp_lookup_table();

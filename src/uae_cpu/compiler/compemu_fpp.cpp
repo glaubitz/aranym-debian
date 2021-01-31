@@ -43,7 +43,7 @@
 # include <cstdio>
 # include <cassert>
 
-#include "memory.h"
+#include "memory-uae.h"
 #include "readcpu.h"
 #include "newcpu.h"
 #include "main.h"
@@ -55,6 +55,12 @@
 
 #define DEBUG 0
 #include "debug.h"
+
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
+#define LD(x) x ## L
+#else
+#define LD(x) x
+#endif
 
 // gb-- WARNING: get_fpcr() and set_fpcr() support is experimental
 #define HANDLE_FPCR 0
@@ -914,20 +920,20 @@ void comp_frestore_opp (uae_u32 opcode)
 	m68k_areg (regs, opcode & 7) = ad;
 }
 
-#if USE_LONG_DOUBLE
-static const fpu_register const_e		= 2.7182818284590452353602874713526625L;
-static const fpu_register const_log10_e	= 0.4342944819032518276511289189166051L;
-static const fpu_register const_loge_10	= 2.3025850929940456840179914546843642L;
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
+static const fpu_register const_e	= LD(2.7182818284590452353); // LD(2.7182818284590452353602874713526625);
+static const fpu_register const_log10_e	= LD(0.4342944819032518276511289189166051);
+static const fpu_register const_loge_10	= LD(2.3025850929940456840179914546843642);
 #else
-static const fpu_register const_e		= 2.7182818284590452354;
+static const fpu_register const_e	= 2.7182818284590452354;
 static const fpu_register const_log10_e	= 0.43429448190325182765;
 static const fpu_register const_loge_10	= 2.30258509299404568402;
 #endif
 
 static const fpu_register power10[]		= {
-	1e0, 1e1, 1e2, 1e4, 1e8, 1e16, 1e32, 1e64, 1e128, 1e256
-#if USE_LONG_DOUBLE
-,	1e512L, 1e1024L, 1e2048L, 1e4096L
+	LD(1e0), LD(1e1), LD(1e2), LD(1e4), LD(1e8), LD(1e16), LD(1e32), LD(1e64), LD(1e128), LD(1e256)
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
+,	LD(1e512), LD(1e1024), LD(1e2048), LD(1e4096)
 #endif
 };
 
@@ -964,15 +970,18 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
     int src;
     
     switch ((extra >> 13) & 0x7) {
-     case 3: /* 2nd most common */
+     case 1: /* illegal */
+        break;
+     case 3: /* FMOVE Fpn,<ea> */
+        /* 2nd most common */
 	if (put_fp_value ((extra >> 7)&7 , opcode, extra) < 0) {
 	    FAIL(1);
 	    return;
 
 	}
 	return;
-     case 6:
-     case 7: 
+     case 6: /* FMOVEM <ea>,<reglist> */
+     case 7: /* FMOVEM <reglist>,<ea> */
 	{
 	    uae_u32 ad, list = 0;
 	    int incr = 0;
@@ -980,11 +989,11 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 
 		/* FMOVEM FPP->memory */
 		switch ((extra >> 11) & 3) { /* Get out early if failure */
-		 case 0:
-		 case 2:
+		 case 0:	/* static pred */
+		 case 2:	/* static postinc */
 		    break;
-		 case 1:
-		 case 3: 
+		 case 1:	/* dynamic pred */
+		 case 3:	/* dynamic postinc */
 		 default:
 		    FAIL(1); return;
 		}
@@ -1052,11 +1061,11 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 
 		uae_u32 ad;
 		switch ((extra >> 11) & 3) { /* Get out early if failure */
-		 case 0:
-		 case 2:
+		 case 0:	/* static pred */
+		 case 2:	/* static postinc */
 		    break;
-		 case 1:
-		 case 3: 
+		 case 1:	/* dynamic pred */
+		 case 3: 	/* dynamic postinc */
 		 default:
 		    FAIL(1); return;
 		}
@@ -1126,9 +1135,11 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 	}
 	return;
 
-     case 4:
-     case 5:  /* rare */
+     case 4: /* FMOVEM <ea>,<control> */
+     case 5: /* FMOVEM <control>,<ea> */
+	/* rare */
 	if ((opcode & 0x30) == 0) {
+	    /* <ea> = Dn or An */
 	    if (extra & 0x2000) {
 		if (extra & 0x1000) {
 #if HANDLE_FPCR
@@ -1144,6 +1155,7 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 		    return;
 		}
 		if (extra & 0x0400) {
+		    /* FPIAR: fixme; we cannot correctly return the address from compiled code */
 		    mov_l_rm(opcode & 15,(uintptr)&fpu.instruction_address);
 			return;
 		}
@@ -1170,15 +1182,15 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 			FAIL(1);
 			return;
 #endif
-//		    return; gb-- FMOVEM could also operate on fpiar
 		}
 		if (extra & 0x0400) {
+		    /* FPIAR: does that make sense at all? */
 		    mov_l_mr((uintptr)&fpu.instruction_address,opcode & 15);
-//			return; gb-- we have to process all FMOVEM bits before returning
 		}
 		return;
 	    }
 	} else if ((opcode & 0x3f) == 0x3c) {
+	    /* <ea> = #imm */
 	    if ((extra & 0x2000) == 0) {
 		// gb-- moved here so that we may FAIL() without generating any code
 		if (extra & 0x0800) {
@@ -1203,12 +1215,10 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 			FAIL(1);
 			return;
 #endif
-//		    return; gb-- FMOVEM could also operate on fpiar
 		}
 		if (extra & 0x0400) {
 		    uae_u32 val=comp_get_ilong((m68k_pc_offset+=4)-4);
 		    mov_l_mi((uintptr)&fpu.instruction_address,val);
-//		    return; gb-- we have to process all FMOVEM bits before returning
 		}
 		return;
 	    }
@@ -1236,7 +1246,7 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 				fmov_log10_2(reg);
 				break;
 			case 0x0c:
-#if USE_LONG_DOUBLE
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
 				fmov_ext_rm(reg,(uintptr)&const_e);
 #else
 				fmov_rm(reg,(uintptr)&const_e);
@@ -1246,7 +1256,7 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 				fmov_log2_e(reg);
 				break;
 			case 0x0e:
-#if USE_LONG_DOUBLE
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
 				fmov_ext_rm(reg,(uintptr)&const_log10_e);
 #else
 				fmov_rm(reg,(uintptr)&const_log10_e);
@@ -1259,7 +1269,7 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 				fmov_loge_2(reg);
 				break;
 			case 0x31:
-#if USE_LONG_DOUBLE
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
 				fmov_ext_rm(reg,(uintptr)&const_loge_10);
 #else
 				fmov_rm(reg,(uintptr)&const_loge_10);
@@ -1277,7 +1287,7 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 			case 0x39:
 			case 0x3a:
 			case 0x3b:
-#if USE_LONG_DOUBLE
+#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
 			case 0x3c:
 			case 0x3d:
 			case 0x3e:
@@ -1313,6 +1323,7 @@ void comp_fpp_opp (uae_u32 opcode, uae_u16 extra)
 			FAIL(1);    
 			return;
 			dont_care_fflags();
+			break;
 		case 0x02:		/* FSINH */
 			FAIL(1);  
 			return;

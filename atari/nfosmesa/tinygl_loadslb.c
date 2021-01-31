@@ -3,7 +3,9 @@
  */
 
 #include <gem.h>
+#include <stdlib.h>
 #include <mint/slb.h>
+#define NFOSMESA_NO_MANGLE
 #include <slb/tiny_gl.h>
 #include <mintbind.h>
 
@@ -17,1618 +19,757 @@
 #endif
 
 struct _gl_tiny gl;
+static SLB_HANDLE gl_slb;
+static SLB_EXEC gl_exec;
+static struct gl_public *gl_pub;
 
+/*
+ * The "nwords" argument should actually only be a "short".
+ * MagiC will expect it that way, with the actual arguments
+ * following.
+ * However, a "short" in the actual function definition
+ * will be treated as promoted to int.
+ * So we pass a long instead, with the upper half
+ * set to 1 + nwords to account for the extra space.
+ * This also has the benefit of keeping the stack longword aligned.
+ */
+#undef SLB_NWORDS
+#define SLB_NWORDS(_nwords) ((((long)(_nwords) + 1l) << 16) | (long)(_nwords))
+#undef SLB_NARGS
+#define SLB_NARGS(_nargs) SLB_NWORDS(_nargs * 2)
+
+
+
+#undef glClearDepth
 #undef glFrustum
 #undef glOrtho
 #undef gluLookAt
-#undef glClearDepth
 
 static void APIENTRY exec_information(void)
 {
-	struct information_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct information_args) = (void __CDECL (*)(struct information_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 0;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 1 /*  */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glBegin(GLenum mode)
 {
-	struct Begin_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct Begin_args) = (void __CDECL (*)(struct Begin_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 1;
-	args.nwords = 2;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 2 /* NFOSMESA_GLBEGIN */, SLB_NARGS(2), gl_pub, &mode);
 }
 
 static void APIENTRY exec_glClear(GLbitfield mask)
 {
-	struct Clear_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLbitfield mask;
-	} args;
-	void __CDECL (*exec)(struct Clear_args) = (void __CDECL (*)(struct Clear_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 2;
-	args.nwords = 2;
-	args.mask = mask;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 3 /* NFOSMESA_GLCLEAR */, SLB_NARGS(2), gl_pub, &mask);
 }
 
 static void APIENTRY exec_glClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha)
 {
-	struct ClearColor_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLclampf red;
-		GLclampf green;
-		GLclampf blue;
-		GLclampf alpha;
-	} args;
-	void __CDECL (*exec)(struct ClearColor_args) = (void __CDECL (*)(struct ClearColor_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 3;
-	args.nwords = 8;
-	args.red = red;
-	args.green = green;
-	args.blue = blue;
-	args.alpha = alpha;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)green;
+	(void)blue;
+	(void)alpha;
+	(*exec)(gl_slb, 4 /* NFOSMESA_GLCLEARCOLOR */, SLB_NARGS(2), gl_pub, &red);
 }
 
 static void APIENTRY exec_glColor3f(GLfloat red, GLfloat green, GLfloat blue)
 {
-	struct Color3f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat red;
-		GLfloat green;
-		GLfloat blue;
-	} args;
-	void __CDECL (*exec)(struct Color3f_args) = (void __CDECL (*)(struct Color3f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 4;
-	args.nwords = 6;
-	args.red = red;
-	args.green = green;
-	args.blue = blue;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)green;
+	(void)blue;
+	(*exec)(gl_slb, 5 /* NFOSMESA_GLCOLOR3F */, SLB_NARGS(2), gl_pub, &red);
 }
 
 static void APIENTRY exec_glDisable(GLenum cap)
 {
-	struct Disable_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum cap;
-	} args;
-	void __CDECL (*exec)(struct Disable_args) = (void __CDECL (*)(struct Disable_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 5;
-	args.nwords = 2;
-	args.cap = cap;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 6 /* NFOSMESA_GLDISABLE */, SLB_NARGS(2), gl_pub, &cap);
 }
 
 static void APIENTRY exec_glEnable(GLenum cap)
 {
-	struct Enable_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum cap;
-	} args;
-	void __CDECL (*exec)(struct Enable_args) = (void __CDECL (*)(struct Enable_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 6;
-	args.nwords = 2;
-	args.cap = cap;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 7 /* NFOSMESA_GLENABLE */, SLB_NARGS(2), gl_pub, &cap);
 }
 
 static void APIENTRY exec_glEnd(void)
 {
-	struct End_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct End_args) = (void __CDECL (*)(struct End_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 7;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 8 /* NFOSMESA_GLEND */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glLightfv(GLenum light, GLenum pname, const GLfloat *params)
 {
-	struct Lightfv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum light;
-		GLenum pname;
-		const GLfloat *params;
-	} args;
-	void __CDECL (*exec)(struct Lightfv_args) = (void __CDECL (*)(struct Lightfv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 8;
-	args.nwords = 6;
-	args.light = light;
-	args.pname = pname;
-	args.params = params;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)pname;
+	(void)params;
+	(*exec)(gl_slb, 9 /* NFOSMESA_GLLIGHTFV */, SLB_NARGS(2), gl_pub, &light);
 }
 
 static void APIENTRY exec_glLoadIdentity(void)
 {
-	struct LoadIdentity_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct LoadIdentity_args) = (void __CDECL (*)(struct LoadIdentity_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 9;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 10 /* NFOSMESA_GLLOADIDENTITY */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glMaterialfv(GLenum face, GLenum pname, const GLfloat *params)
 {
-	struct Materialfv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum face;
-		GLenum pname;
-		const GLfloat *params;
-	} args;
-	void __CDECL (*exec)(struct Materialfv_args) = (void __CDECL (*)(struct Materialfv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 10;
-	args.nwords = 6;
-	args.face = face;
-	args.pname = pname;
-	args.params = params;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)pname;
+	(void)params;
+	(*exec)(gl_slb, 11 /* NFOSMESA_GLMATERIALFV */, SLB_NARGS(2), gl_pub, &face);
 }
 
 static void APIENTRY exec_glMatrixMode(GLenum mode)
 {
-	struct MatrixMode_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct MatrixMode_args) = (void __CDECL (*)(struct MatrixMode_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 11;
-	args.nwords = 2;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 12 /* NFOSMESA_GLMATRIXMODE */, SLB_NARGS(2), gl_pub, &mode);
 }
 
 static void APIENTRY exec_glOrthof(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near_val, GLfloat far_val)
 {
-	struct Orthof_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat left;
-		GLfloat right;
-		GLfloat bottom;
-		GLfloat top;
-		GLfloat near_val;
-		GLfloat far_val;
-	} args;
-	void __CDECL (*exec)(struct Orthof_args) = (void __CDECL (*)(struct Orthof_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 12;
-	args.nwords = 12;
-	args.left = left;
-	args.right = right;
-	args.bottom = bottom;
-	args.top = top;
-	args.near_val = near_val;
-	args.far_val = far_val;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)right;
+	(void)bottom;
+	(void)top;
+	(void)near_val;
+	(void)far_val;
+	(*exec)(gl_slb, 13 /* NFOSMESA_GLORTHOF */, SLB_NARGS(2), gl_pub, &left);
 }
 
 static void APIENTRY exec_glPopMatrix(void)
 {
-	struct PopMatrix_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct PopMatrix_args) = (void __CDECL (*)(struct PopMatrix_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 13;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 14 /* NFOSMESA_GLPOPMATRIX */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glPushMatrix(void)
 {
-	struct PushMatrix_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct PushMatrix_args) = (void __CDECL (*)(struct PushMatrix_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 14;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 15 /* NFOSMESA_GLPUSHMATRIX */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glRotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z)
 {
-	struct Rotatef_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat angle;
-		GLfloat x;
-		GLfloat y;
-		GLfloat z;
-	} args;
-	void __CDECL (*exec)(struct Rotatef_args) = (void __CDECL (*)(struct Rotatef_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 15;
-	args.nwords = 8;
-	args.angle = angle;
-	args.x = x;
-	args.y = y;
-	args.z = z;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)x;
+	(void)y;
+	(void)z;
+	(*exec)(gl_slb, 16 /* NFOSMESA_GLROTATEF */, SLB_NARGS(2), gl_pub, &angle);
 }
 
 static void APIENTRY exec_glTexEnvi(GLenum target, GLenum pname, GLint param)
 {
-	struct TexEnvi_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum target;
-		GLenum pname;
-		GLint param;
-	} args;
-	void __CDECL (*exec)(struct TexEnvi_args) = (void __CDECL (*)(struct TexEnvi_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 16;
-	args.nwords = 6;
-	args.target = target;
-	args.pname = pname;
-	args.param = param;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)pname;
+	(void)param;
+	(*exec)(gl_slb, 17 /* NFOSMESA_GLTEXENVI */, SLB_NARGS(2), gl_pub, &target);
 }
 
 static void APIENTRY exec_glTexParameteri(GLenum target, GLenum pname, GLint param)
 {
-	struct TexParameteri_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum target;
-		GLenum pname;
-		GLint param;
-	} args;
-	void __CDECL (*exec)(struct TexParameteri_args) = (void __CDECL (*)(struct TexParameteri_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 17;
-	args.nwords = 6;
-	args.target = target;
-	args.pname = pname;
-	args.param = param;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)pname;
+	(void)param;
+	(*exec)(gl_slb, 18 /* NFOSMESA_GLTEXPARAMETERI */, SLB_NARGS(2), gl_pub, &target);
 }
 
 static void APIENTRY exec_glTranslatef(GLfloat x, GLfloat y, GLfloat z)
 {
-	struct Translatef_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat x;
-		GLfloat y;
-		GLfloat z;
-	} args;
-	void __CDECL (*exec)(struct Translatef_args) = (void __CDECL (*)(struct Translatef_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 18;
-	args.nwords = 6;
-	args.x = x;
-	args.y = y;
-	args.z = z;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)y;
+	(void)z;
+	(*exec)(gl_slb, 19 /* NFOSMESA_GLTRANSLATEF */, SLB_NARGS(2), gl_pub, &x);
 }
 
 static void APIENTRY exec_glVertex2f(GLfloat x, GLfloat y)
 {
-	struct Vertex2f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat x;
-		GLfloat y;
-	} args;
-	void __CDECL (*exec)(struct Vertex2f_args) = (void __CDECL (*)(struct Vertex2f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 19;
-	args.nwords = 4;
-	args.x = x;
-	args.y = y;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)y;
+	(*exec)(gl_slb, 20 /* NFOSMESA_GLVERTEX2F */, SLB_NARGS(2), gl_pub, &x);
 }
 
 static void APIENTRY exec_glVertex3f(GLfloat x, GLfloat y, GLfloat z)
 {
-	struct Vertex3f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat x;
-		GLfloat y;
-		GLfloat z;
-	} args;
-	void __CDECL (*exec)(struct Vertex3f_args) = (void __CDECL (*)(struct Vertex3f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 20;
-	args.nwords = 6;
-	args.x = x;
-	args.y = y;
-	args.z = z;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)y;
+	(void)z;
+	(*exec)(gl_slb, 21 /* NFOSMESA_GLVERTEX3F */, SLB_NARGS(2), gl_pub, &x);
 }
 
 static void * APIENTRY exec_OSMesaCreateLDG(GLenum format, GLenum type, GLint width, GLint height)
 {
-	struct OSMesaCreateLDG_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum format;
-		GLenum type;
-		GLint width;
-		GLint height;
-	} args;
-	void * __CDECL (*exec)(struct OSMesaCreateLDG_args) = (void * __CDECL (*)(struct OSMesaCreateLDG_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 21;
-	args.nwords = 8;
-	args.format = format;
-	args.type = type;
-	args.width = width;
-	args.height = height;
-	return (*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)type;
+	(void)width;
+	(void)height;
+	return (void *)(*exec)(gl_slb, 22 /*  */, SLB_NARGS(2), gl_pub, &format);
 }
 
 static void APIENTRY exec_OSMesaDestroyLDG(void)
 {
-	struct OSMesaDestroyLDG_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct OSMesaDestroyLDG_args) = (void __CDECL (*)(struct OSMesaDestroyLDG_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 22;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 23 /*  */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glArrayElement(GLint i)
 {
-	struct ArrayElement_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLint i;
-	} args;
-	void __CDECL (*exec)(struct ArrayElement_args) = (void __CDECL (*)(struct ArrayElement_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 23;
-	args.nwords = 2;
-	args.i = i;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 24 /* NFOSMESA_GLARRAYELEMENT */, SLB_NARGS(2), gl_pub, &i);
 }
 
 static void APIENTRY exec_glBindTexture(GLenum target, GLuint texture)
 {
-	struct BindTexture_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum target;
-		GLuint texture;
-	} args;
-	void __CDECL (*exec)(struct BindTexture_args) = (void __CDECL (*)(struct BindTexture_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 24;
-	args.nwords = 4;
-	args.target = target;
-	args.texture = texture;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)texture;
+	(*exec)(gl_slb, 25 /* NFOSMESA_GLBINDTEXTURE */, SLB_NARGS(2), gl_pub, &target);
 }
 
 static void APIENTRY exec_glCallList(GLuint list)
 {
-	struct CallList_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLuint list;
-	} args;
-	void __CDECL (*exec)(struct CallList_args) = (void __CDECL (*)(struct CallList_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 25;
-	args.nwords = 2;
-	args.list = list;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 26 /* NFOSMESA_GLCALLLIST */, SLB_NARGS(2), gl_pub, &list);
 }
 
 static void APIENTRY exec_glClearDepthf(GLfloat d)
 {
-	struct ClearDepthf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat d;
-	} args;
-	void __CDECL (*exec)(struct ClearDepthf_args) = (void __CDECL (*)(struct ClearDepthf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 26;
-	args.nwords = 2;
-	args.d = d;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 27 /* NFOSMESA_GLCLEARDEPTHF */, SLB_NARGS(2), gl_pub, &d);
 }
 
 static void APIENTRY exec_glColor4f(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)
 {
-	struct Color4f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat red;
-		GLfloat green;
-		GLfloat blue;
-		GLfloat alpha;
-	} args;
-	void __CDECL (*exec)(struct Color4f_args) = (void __CDECL (*)(struct Color4f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 27;
-	args.nwords = 8;
-	args.red = red;
-	args.green = green;
-	args.blue = blue;
-	args.alpha = alpha;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)green;
+	(void)blue;
+	(void)alpha;
+	(*exec)(gl_slb, 28 /* NFOSMESA_GLCOLOR4F */, SLB_NARGS(2), gl_pub, &red);
 }
 
 static void APIENTRY exec_glColor3fv(const GLfloat *v)
 {
-	struct Color3fv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *v;
-	} args;
-	void __CDECL (*exec)(struct Color3fv_args) = (void __CDECL (*)(struct Color3fv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 28;
-	args.nwords = 2;
-	args.v = v;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 29 /* NFOSMESA_GLCOLOR3FV */, SLB_NARGS(2), gl_pub, &v);
 }
 
 static void APIENTRY exec_glColor4fv(const GLfloat *v)
 {
-	struct Color4fv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *v;
-	} args;
-	void __CDECL (*exec)(struct Color4fv_args) = (void __CDECL (*)(struct Color4fv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 29;
-	args.nwords = 2;
-	args.v = v;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 30 /* NFOSMESA_GLCOLOR4FV */, SLB_NARGS(2), gl_pub, &v);
 }
 
 static void APIENTRY exec_glColorMaterial(GLenum face, GLenum mode)
 {
-	struct ColorMaterial_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum face;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct ColorMaterial_args) = (void __CDECL (*)(struct ColorMaterial_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 30;
-	args.nwords = 4;
-	args.face = face;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)mode;
+	(*exec)(gl_slb, 31 /* NFOSMESA_GLCOLORMATERIAL */, SLB_NARGS(2), gl_pub, &face);
 }
 
 static void APIENTRY exec_glColorPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
 {
-	struct ColorPointer_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLint size;
-		GLenum type;
-		GLsizei stride;
-		const GLvoid *pointer;
-	} args;
-	void __CDECL (*exec)(struct ColorPointer_args) = (void __CDECL (*)(struct ColorPointer_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 31;
-	args.nwords = 8;
-	args.size = size;
-	args.type = type;
-	args.stride = stride;
-	args.pointer = pointer;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)type;
+	(void)stride;
+	(void)pointer;
+	(*exec)(gl_slb, 32 /* NFOSMESA_GLCOLORPOINTER */, SLB_NARGS(2), gl_pub, &size);
 }
 
 static void APIENTRY exec_glCullFace(GLenum mode)
 {
-	struct CullFace_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct CullFace_args) = (void __CDECL (*)(struct CullFace_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 32;
-	args.nwords = 2;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 33 /* NFOSMESA_GLCULLFACE */, SLB_NARGS(2), gl_pub, &mode);
 }
 
 static void APIENTRY exec_glDeleteTextures(GLsizei n, const GLuint *textures)
 {
-	struct DeleteTextures_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLsizei n;
-		const GLuint *textures;
-	} args;
-	void __CDECL (*exec)(struct DeleteTextures_args) = (void __CDECL (*)(struct DeleteTextures_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 33;
-	args.nwords = 4;
-	args.n = n;
-	args.textures = textures;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)textures;
+	(*exec)(gl_slb, 34 /* NFOSMESA_GLDELETETEXTURES */, SLB_NARGS(2), gl_pub, &n);
 }
 
 static void APIENTRY exec_glDisableClientState(GLenum array)
 {
-	struct DisableClientState_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum array;
-	} args;
-	void __CDECL (*exec)(struct DisableClientState_args) = (void __CDECL (*)(struct DisableClientState_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 34;
-	args.nwords = 2;
-	args.array = array;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 35 /* NFOSMESA_GLDISABLECLIENTSTATE */, SLB_NARGS(2), gl_pub, &array);
 }
 
 static void APIENTRY exec_glEnableClientState(GLenum array)
 {
-	struct EnableClientState_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum array;
-	} args;
-	void __CDECL (*exec)(struct EnableClientState_args) = (void __CDECL (*)(struct EnableClientState_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 35;
-	args.nwords = 2;
-	args.array = array;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 36 /* NFOSMESA_GLENABLECLIENTSTATE */, SLB_NARGS(2), gl_pub, &array);
 }
 
 static void APIENTRY exec_glEndList(void)
 {
-	struct EndList_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct EndList_args) = (void __CDECL (*)(struct EndList_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 36;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 37 /* NFOSMESA_GLENDLIST */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glEdgeFlag(GLboolean32 flag)
 {
-	struct EdgeFlag_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLboolean32 flag;
-	} args;
-	void __CDECL (*exec)(struct EdgeFlag_args) = (void __CDECL (*)(struct EdgeFlag_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 37;
-	args.nwords = 2;
-	args.flag = flag;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 38 /* NFOSMESA_GLEDGEFLAG */, SLB_NARGS(2), gl_pub, &flag);
 }
 
 static void APIENTRY exec_glFlush(void)
 {
-	struct Flush_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct Flush_args) = (void __CDECL (*)(struct Flush_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 38;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 39 /* NFOSMESA_GLFLUSH */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glFrontFace(GLenum mode)
 {
-	struct FrontFace_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct FrontFace_args) = (void __CDECL (*)(struct FrontFace_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 39;
-	args.nwords = 2;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 40 /* NFOSMESA_GLFRONTFACE */, SLB_NARGS(2), gl_pub, &mode);
 }
 
 static void APIENTRY exec_glFrustumf(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat near_val, GLfloat far_val)
 {
-	struct Frustumf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat left;
-		GLfloat right;
-		GLfloat bottom;
-		GLfloat top;
-		GLfloat near_val;
-		GLfloat far_val;
-	} args;
-	void __CDECL (*exec)(struct Frustumf_args) = (void __CDECL (*)(struct Frustumf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 40;
-	args.nwords = 12;
-	args.left = left;
-	args.right = right;
-	args.bottom = bottom;
-	args.top = top;
-	args.near_val = near_val;
-	args.far_val = far_val;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)right;
+	(void)bottom;
+	(void)top;
+	(void)near_val;
+	(void)far_val;
+	(*exec)(gl_slb, 41 /* NFOSMESA_GLFRUSTUMF */, SLB_NARGS(2), gl_pub, &left);
 }
 
 static GLuint APIENTRY exec_glGenLists(GLsizei range)
 {
-	struct GenLists_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLsizei range;
-	} args;
-	GLuint __CDECL (*exec)(struct GenLists_args) = (GLuint __CDECL (*)(struct GenLists_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 41;
-	args.nwords = 2;
-	args.range = range;
-	return (*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	return (GLuint)(*exec)(gl_slb, 42 /* NFOSMESA_GLGENLISTS */, SLB_NARGS(2), gl_pub, &range);
 }
 
 static void APIENTRY exec_glGenTextures(GLsizei n, GLuint *textures)
 {
-	struct GenTextures_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLsizei n;
-		GLuint *textures;
-	} args;
-	void __CDECL (*exec)(struct GenTextures_args) = (void __CDECL (*)(struct GenTextures_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 42;
-	args.nwords = 4;
-	args.n = n;
-	args.textures = textures;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)textures;
+	(*exec)(gl_slb, 43 /* NFOSMESA_GLGENTEXTURES */, SLB_NARGS(2), gl_pub, &n);
 }
 
 static void APIENTRY exec_glGetFloatv(GLenum pname, GLfloat *params)
 {
-	struct GetFloatv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum pname;
-		GLfloat *params;
-	} args;
-	void __CDECL (*exec)(struct GetFloatv_args) = (void __CDECL (*)(struct GetFloatv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 43;
-	args.nwords = 4;
-	args.pname = pname;
-	args.params = params;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)params;
+	(*exec)(gl_slb, 44 /* NFOSMESA_GLGETFLOATV */, SLB_NARGS(2), gl_pub, &pname);
 }
 
 static void APIENTRY exec_glGetIntegerv(GLenum pname, GLint *params)
 {
-	struct GetIntegerv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum pname;
-		GLint *params;
-	} args;
-	void __CDECL (*exec)(struct GetIntegerv_args) = (void __CDECL (*)(struct GetIntegerv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 44;
-	args.nwords = 4;
-	args.pname = pname;
-	args.params = params;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)params;
+	(*exec)(gl_slb, 45 /* NFOSMESA_GLGETINTEGERV */, SLB_NARGS(2), gl_pub, &pname);
 }
 
 static void APIENTRY exec_glHint(GLenum target, GLenum mode)
 {
-	struct Hint_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum target;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct Hint_args) = (void __CDECL (*)(struct Hint_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 45;
-	args.nwords = 4;
-	args.target = target;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)mode;
+	(*exec)(gl_slb, 46 /* NFOSMESA_GLHINT */, SLB_NARGS(2), gl_pub, &target);
 }
 
 static void APIENTRY exec_glInitNames(void)
 {
-	struct InitNames_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct InitNames_args) = (void __CDECL (*)(struct InitNames_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 46;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 47 /* NFOSMESA_GLINITNAMES */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static GLboolean APIENTRY exec_glIsList(GLuint list)
 {
-	struct IsList_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLuint list;
-	} args;
-	GLboolean __CDECL (*exec)(struct IsList_args) = (GLboolean __CDECL (*)(struct IsList_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 47;
-	args.nwords = 2;
-	args.list = list;
-	return (*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	return (GLboolean)(*exec)(gl_slb, 48 /* NFOSMESA_GLISLIST */, SLB_NARGS(2), gl_pub, &list);
 }
 
 static void APIENTRY exec_glLightf(GLenum light, GLenum pname, GLfloat param)
 {
-	struct Lightf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum light;
-		GLenum pname;
-		GLfloat param;
-	} args;
-	void __CDECL (*exec)(struct Lightf_args) = (void __CDECL (*)(struct Lightf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 48;
-	args.nwords = 6;
-	args.light = light;
-	args.pname = pname;
-	args.param = param;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)pname;
+	(void)param;
+	(*exec)(gl_slb, 49 /* NFOSMESA_GLLIGHTF */, SLB_NARGS(2), gl_pub, &light);
 }
 
 static void APIENTRY exec_glLightModeli(GLenum pname, GLint param)
 {
-	struct LightModeli_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum pname;
-		GLint param;
-	} args;
-	void __CDECL (*exec)(struct LightModeli_args) = (void __CDECL (*)(struct LightModeli_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 49;
-	args.nwords = 4;
-	args.pname = pname;
-	args.param = param;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)param;
+	(*exec)(gl_slb, 50 /* NFOSMESA_GLLIGHTMODELI */, SLB_NARGS(2), gl_pub, &pname);
 }
 
 static void APIENTRY exec_glLightModelfv(GLenum pname, const GLfloat *params)
 {
-	struct LightModelfv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum pname;
-		const GLfloat *params;
-	} args;
-	void __CDECL (*exec)(struct LightModelfv_args) = (void __CDECL (*)(struct LightModelfv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 50;
-	args.nwords = 4;
-	args.pname = pname;
-	args.params = params;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)params;
+	(*exec)(gl_slb, 51 /* NFOSMESA_GLLIGHTMODELFV */, SLB_NARGS(2), gl_pub, &pname);
 }
 
 static void APIENTRY exec_glLoadMatrixf(const GLfloat *m)
 {
-	struct LoadMatrixf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *m;
-	} args;
-	void __CDECL (*exec)(struct LoadMatrixf_args) = (void __CDECL (*)(struct LoadMatrixf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 51;
-	args.nwords = 2;
-	args.m = m;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 52 /* NFOSMESA_GLLOADMATRIXF */, SLB_NARGS(2), gl_pub, &m);
 }
 
 static void APIENTRY exec_glLoadName(GLuint name)
 {
-	struct LoadName_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLuint name;
-	} args;
-	void __CDECL (*exec)(struct LoadName_args) = (void __CDECL (*)(struct LoadName_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 52;
-	args.nwords = 2;
-	args.name = name;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 53 /* NFOSMESA_GLLOADNAME */, SLB_NARGS(2), gl_pub, &name);
 }
 
 static void APIENTRY exec_glMaterialf(GLenum face, GLenum pname, GLfloat param)
 {
-	struct Materialf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum face;
-		GLenum pname;
-		GLfloat param;
-	} args;
-	void __CDECL (*exec)(struct Materialf_args) = (void __CDECL (*)(struct Materialf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 53;
-	args.nwords = 6;
-	args.face = face;
-	args.pname = pname;
-	args.param = param;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)pname;
+	(void)param;
+	(*exec)(gl_slb, 54 /* NFOSMESA_GLMATERIALF */, SLB_NARGS(2), gl_pub, &face);
 }
 
 static void APIENTRY exec_glMultMatrixf(const GLfloat *m)
 {
-	struct MultMatrixf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *m;
-	} args;
-	void __CDECL (*exec)(struct MultMatrixf_args) = (void __CDECL (*)(struct MultMatrixf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 54;
-	args.nwords = 2;
-	args.m = m;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 55 /* NFOSMESA_GLMULTMATRIXF */, SLB_NARGS(2), gl_pub, &m);
 }
 
 static void APIENTRY exec_glNewList(GLuint list, GLenum mode)
 {
-	struct NewList_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLuint list;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct NewList_args) = (void __CDECL (*)(struct NewList_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 55;
-	args.nwords = 4;
-	args.list = list;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)mode;
+	(*exec)(gl_slb, 56 /* NFOSMESA_GLNEWLIST */, SLB_NARGS(2), gl_pub, &list);
 }
 
 static void APIENTRY exec_glNormal3f(GLfloat nx, GLfloat ny, GLfloat nz)
 {
-	struct Normal3f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat nx;
-		GLfloat ny;
-		GLfloat nz;
-	} args;
-	void __CDECL (*exec)(struct Normal3f_args) = (void __CDECL (*)(struct Normal3f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 56;
-	args.nwords = 6;
-	args.nx = nx;
-	args.ny = ny;
-	args.nz = nz;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)ny;
+	(void)nz;
+	(*exec)(gl_slb, 57 /* NFOSMESA_GLNORMAL3F */, SLB_NARGS(2), gl_pub, &nx);
 }
 
 static void APIENTRY exec_glNormal3fv(const GLfloat *v)
 {
-	struct Normal3fv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *v;
-	} args;
-	void __CDECL (*exec)(struct Normal3fv_args) = (void __CDECL (*)(struct Normal3fv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 57;
-	args.nwords = 2;
-	args.v = v;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 58 /* NFOSMESA_GLNORMAL3FV */, SLB_NARGS(2), gl_pub, &v);
 }
 
 static void APIENTRY exec_glNormalPointer(GLenum type, GLsizei stride, const GLvoid *pointer)
 {
-	struct NormalPointer_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum type;
-		GLsizei stride;
-		const GLvoid *pointer;
-	} args;
-	void __CDECL (*exec)(struct NormalPointer_args) = (void __CDECL (*)(struct NormalPointer_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 58;
-	args.nwords = 6;
-	args.type = type;
-	args.stride = stride;
-	args.pointer = pointer;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)stride;
+	(void)pointer;
+	(*exec)(gl_slb, 59 /* NFOSMESA_GLNORMALPOINTER */, SLB_NARGS(2), gl_pub, &type);
 }
 
 static void APIENTRY exec_glPixelStorei(GLenum pname, GLint param)
 {
-	struct PixelStorei_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum pname;
-		GLint param;
-	} args;
-	void __CDECL (*exec)(struct PixelStorei_args) = (void __CDECL (*)(struct PixelStorei_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 59;
-	args.nwords = 4;
-	args.pname = pname;
-	args.param = param;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)param;
+	(*exec)(gl_slb, 60 /* NFOSMESA_GLPIXELSTOREI */, SLB_NARGS(2), gl_pub, &pname);
 }
 
 static void APIENTRY exec_glPolygonMode(GLenum face, GLenum mode)
 {
-	struct PolygonMode_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum face;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct PolygonMode_args) = (void __CDECL (*)(struct PolygonMode_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 60;
-	args.nwords = 4;
-	args.face = face;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)mode;
+	(*exec)(gl_slb, 61 /* NFOSMESA_GLPOLYGONMODE */, SLB_NARGS(2), gl_pub, &face);
 }
 
 static void APIENTRY exec_glPolygonOffset(GLfloat factor, GLfloat units)
 {
-	struct PolygonOffset_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat factor;
-		GLfloat units;
-	} args;
-	void __CDECL (*exec)(struct PolygonOffset_args) = (void __CDECL (*)(struct PolygonOffset_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 61;
-	args.nwords = 4;
-	args.factor = factor;
-	args.units = units;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)units;
+	(*exec)(gl_slb, 62 /* NFOSMESA_GLPOLYGONOFFSET */, SLB_NARGS(2), gl_pub, &factor);
 }
 
 static void APIENTRY exec_glPopName(void)
 {
-	struct PopName_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	void __CDECL (*exec)(struct PopName_args) = (void __CDECL (*)(struct PopName_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 62;
-	args.nwords = 0;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 63 /* NFOSMESA_GLPOPNAME */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glPushName(GLuint name)
 {
-	struct PushName_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLuint name;
-	} args;
-	void __CDECL (*exec)(struct PushName_args) = (void __CDECL (*)(struct PushName_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 63;
-	args.nwords = 2;
-	args.name = name;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 64 /* NFOSMESA_GLPUSHNAME */, SLB_NARGS(2), gl_pub, &name);
 }
 
 static GLint APIENTRY exec_glRenderMode(GLenum mode)
 {
-	struct RenderMode_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum mode;
-	} args;
-	GLint __CDECL (*exec)(struct RenderMode_args) = (GLint __CDECL (*)(struct RenderMode_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 64;
-	args.nwords = 2;
-	args.mode = mode;
-	return (*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	return (GLint)(*exec)(gl_slb, 65 /* NFOSMESA_GLRENDERMODE */, SLB_NARGS(2), gl_pub, &mode);
 }
 
 static void APIENTRY exec_glSelectBuffer(GLsizei size, GLuint *buffer)
 {
-	struct SelectBuffer_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLsizei size;
-		GLuint *buffer;
-	} args;
-	void __CDECL (*exec)(struct SelectBuffer_args) = (void __CDECL (*)(struct SelectBuffer_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 65;
-	args.nwords = 4;
-	args.size = size;
-	args.buffer = buffer;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)buffer;
+	(*exec)(gl_slb, 66 /* NFOSMESA_GLSELECTBUFFER */, SLB_NARGS(2), gl_pub, &size);
 }
 
 static void APIENTRY exec_glScalef(GLfloat x, GLfloat y, GLfloat z)
 {
-	struct Scalef_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat x;
-		GLfloat y;
-		GLfloat z;
-	} args;
-	void __CDECL (*exec)(struct Scalef_args) = (void __CDECL (*)(struct Scalef_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 66;
-	args.nwords = 6;
-	args.x = x;
-	args.y = y;
-	args.z = z;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)y;
+	(void)z;
+	(*exec)(gl_slb, 67 /* NFOSMESA_GLSCALEF */, SLB_NARGS(2), gl_pub, &x);
 }
 
 static void APIENTRY exec_glShadeModel(GLenum mode)
 {
-	struct ShadeModel_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum mode;
-	} args;
-	void __CDECL (*exec)(struct ShadeModel_args) = (void __CDECL (*)(struct ShadeModel_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 67;
-	args.nwords = 2;
-	args.mode = mode;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 68 /* NFOSMESA_GLSHADEMODEL */, SLB_NARGS(2), gl_pub, &mode);
 }
 
 static void APIENTRY exec_glTexCoord2f(GLfloat s, GLfloat t)
 {
-	struct TexCoord2f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat s;
-		GLfloat t;
-	} args;
-	void __CDECL (*exec)(struct TexCoord2f_args) = (void __CDECL (*)(struct TexCoord2f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 68;
-	args.nwords = 4;
-	args.s = s;
-	args.t = t;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)t;
+	(*exec)(gl_slb, 69 /* NFOSMESA_GLTEXCOORD2F */, SLB_NARGS(2), gl_pub, &s);
 }
 
 static void APIENTRY exec_glTexCoord4f(GLfloat s, GLfloat t, GLfloat r, GLfloat q)
 {
-	struct TexCoord4f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat s;
-		GLfloat t;
-		GLfloat r;
-		GLfloat q;
-	} args;
-	void __CDECL (*exec)(struct TexCoord4f_args) = (void __CDECL (*)(struct TexCoord4f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 69;
-	args.nwords = 8;
-	args.s = s;
-	args.t = t;
-	args.r = r;
-	args.q = q;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)t;
+	(void)r;
+	(void)q;
+	(*exec)(gl_slb, 70 /* NFOSMESA_GLTEXCOORD4F */, SLB_NARGS(2), gl_pub, &s);
 }
 
 static void APIENTRY exec_glTexCoord2fv(const GLfloat *v)
 {
-	struct TexCoord2fv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *v;
-	} args;
-	void __CDECL (*exec)(struct TexCoord2fv_args) = (void __CDECL (*)(struct TexCoord2fv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 70;
-	args.nwords = 2;
-	args.v = v;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 71 /* NFOSMESA_GLTEXCOORD2FV */, SLB_NARGS(2), gl_pub, &v);
 }
 
 static void APIENTRY exec_glTexCoordPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
 {
-	struct TexCoordPointer_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLint size;
-		GLenum type;
-		GLsizei stride;
-		const GLvoid *pointer;
-	} args;
-	void __CDECL (*exec)(struct TexCoordPointer_args) = (void __CDECL (*)(struct TexCoordPointer_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 71;
-	args.nwords = 8;
-	args.size = size;
-	args.type = type;
-	args.stride = stride;
-	args.pointer = pointer;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)type;
+	(void)stride;
+	(void)pointer;
+	(*exec)(gl_slb, 72 /* NFOSMESA_GLTEXCOORDPOINTER */, SLB_NARGS(2), gl_pub, &size);
 }
 
 static void APIENTRY exec_glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
 {
-	struct TexImage2D_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLenum target;
-		GLint level;
-		GLint internalformat;
-		GLsizei width;
-		GLsizei height;
-		GLint border;
-		GLenum format;
-		GLenum type;
-		const GLvoid *pixels;
-	} args;
-	void __CDECL (*exec)(struct TexImage2D_args) = (void __CDECL (*)(struct TexImage2D_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 72;
-	args.nwords = 18;
-	args.target = target;
-	args.level = level;
-	args.internalformat = internalformat;
-	args.width = width;
-	args.height = height;
-	args.border = border;
-	args.format = format;
-	args.type = type;
-	args.pixels = pixels;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)level;
+	(void)internalformat;
+	(void)width;
+	(void)height;
+	(void)border;
+	(void)format;
+	(void)type;
+	(void)pixels;
+	(*exec)(gl_slb, 73 /* NFOSMESA_GLTEXIMAGE2D */, SLB_NARGS(2), gl_pub, &target);
 }
 
 static void APIENTRY exec_glVertex4f(GLfloat x, GLfloat y, GLfloat z, GLfloat w)
 {
-	struct Vertex4f_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat x;
-		GLfloat y;
-		GLfloat z;
-		GLfloat w;
-	} args;
-	void __CDECL (*exec)(struct Vertex4f_args) = (void __CDECL (*)(struct Vertex4f_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 73;
-	args.nwords = 8;
-	args.x = x;
-	args.y = y;
-	args.z = z;
-	args.w = w;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)y;
+	(void)z;
+	(void)w;
+	(*exec)(gl_slb, 74 /* NFOSMESA_GLVERTEX4F */, SLB_NARGS(2), gl_pub, &x);
 }
 
 static void APIENTRY exec_glVertex3fv(const GLfloat *v)
 {
-	struct Vertex3fv_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		const GLfloat *v;
-	} args;
-	void __CDECL (*exec)(struct Vertex3fv_args) = (void __CDECL (*)(struct Vertex3fv_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 74;
-	args.nwords = 2;
-	args.v = v;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 75 /* NFOSMESA_GLVERTEX3FV */, SLB_NARGS(2), gl_pub, &v);
 }
 
 static void APIENTRY exec_glVertexPointer(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer)
 {
-	struct VertexPointer_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLint size;
-		GLenum type;
-		GLsizei stride;
-		const GLvoid *pointer;
-	} args;
-	void __CDECL (*exec)(struct VertexPointer_args) = (void __CDECL (*)(struct VertexPointer_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 75;
-	args.nwords = 8;
-	args.size = size;
-	args.type = type;
-	args.stride = stride;
-	args.pointer = pointer;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)type;
+	(void)stride;
+	(void)pointer;
+	(*exec)(gl_slb, 76 /* NFOSMESA_GLVERTEXPOINTER */, SLB_NARGS(2), gl_pub, &size);
 }
 
 static void APIENTRY exec_glViewport(GLint x, GLint y, GLsizei width, GLsizei height)
 {
-	struct Viewport_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLint x;
-		GLint y;
-		GLsizei width;
-		GLsizei height;
-	} args;
-	void __CDECL (*exec)(struct Viewport_args) = (void __CDECL (*)(struct Viewport_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 76;
-	args.nwords = 8;
-	args.x = x;
-	args.y = y;
-	args.width = width;
-	args.height = height;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)y;
+	(void)width;
+	(void)height;
+	(*exec)(gl_slb, 77 /* NFOSMESA_GLVIEWPORT */, SLB_NARGS(2), gl_pub, &x);
 }
 
 static void APIENTRY exec_swapbuffer(void *buffer)
 {
-	struct swapbuffer_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		void *buffer;
-	} args;
-	void __CDECL (*exec)(struct swapbuffer_args) = (void __CDECL (*)(struct swapbuffer_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 77;
-	args.nwords = 2;
-	args.buffer = buffer;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 78 /* NFOSMESA_TINYGLSWAPBUFFER */, SLB_NARGS(2), gl_pub, &buffer);
 }
 
 static GLsizei APIENTRY exec_max_width(void)
 {
-	struct max_width_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	GLsizei __CDECL (*exec)(struct max_width_args) = (GLsizei __CDECL (*)(struct max_width_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 78;
-	args.nwords = 0;
-	return (*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	return (GLsizei)(*exec)(gl_slb, 79 /*  */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static GLsizei APIENTRY exec_max_height(void)
 {
-	struct max_height_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-	} args;
-	GLsizei __CDECL (*exec)(struct max_height_args) = (GLsizei __CDECL (*)(struct max_height_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 79;
-	args.nwords = 0;
-	return (*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	return (GLsizei)(*exec)(gl_slb, 80 /*  */, SLB_NARGS(2), gl_pub, NULL);
 }
 
 static void APIENTRY exec_glDeleteLists(GLuint list, GLsizei range)
 {
-	struct DeleteLists_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLuint list;
-		GLsizei range;
-	} args;
-	void __CDECL (*exec)(struct DeleteLists_args) = (void __CDECL (*)(struct DeleteLists_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 80;
-	args.nwords = 4;
-	args.list = list;
-	args.range = range;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)range;
+	(*exec)(gl_slb, 81 /* NFOSMESA_GLDELETELISTS */, SLB_NARGS(2), gl_pub, &list);
 }
 
 static void APIENTRY exec_gluLookAtf(GLfloat eyeX, GLfloat eyeY, GLfloat eyeZ, GLfloat centerX, GLfloat centerY, GLfloat centerZ, GLfloat upX, GLfloat upY, GLfloat upZ)
 {
-	struct LookAtf_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		GLfloat eyeX;
-		GLfloat eyeY;
-		GLfloat eyeZ;
-		GLfloat centerX;
-		GLfloat centerY;
-		GLfloat centerZ;
-		GLfloat upX;
-		GLfloat upY;
-		GLfloat upZ;
-	} args;
-	void __CDECL (*exec)(struct LookAtf_args) = (void __CDECL (*)(struct LookAtf_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 81;
-	args.nwords = 18;
-	args.eyeX = eyeX;
-	args.eyeY = eyeY;
-	args.eyeZ = eyeZ;
-	args.centerX = centerX;
-	args.centerY = centerY;
-	args.centerZ = centerZ;
-	args.upX = upX;
-	args.upY = upY;
-	args.upZ = upZ;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(void)eyeY;
+	(void)eyeZ;
+	(void)centerX;
+	(void)centerY;
+	(void)centerZ;
+	(void)upX;
+	(void)upY;
+	(void)upZ;
+	(*exec)(gl_slb, 82 /* NFOSMESA_GLULOOKATF */, SLB_NARGS(2), gl_pub, &eyeX);
 }
 
 static void APIENTRY exec_exception_error(void (CALLBACK *exception)(GLenum param) )
 {
-	struct exception_error_args {
-		SLB_HANDLE slb;
-		long fn;
-		short nwords;
-		void (CALLBACK *exception)(GLenum param) ;
-	} args;
-	void __CDECL (*exec)(struct exception_error_args) = (void __CDECL (*)(struct exception_error_args))gl_exec;
-	args.slb = gl_slb;
-	args.fn = 82;
-	args.nwords = 2;
-	args.exception = exception;
-	(*exec)(args);
+	long  __CDECL (*exec)(SLB_HANDLE, long, long, void *, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *, void *))gl_exec;
+	(*exec)(gl_slb, 83 /*  */, SLB_NARGS(2), gl_pub, &exception);
 }
 
 static void slb_init_tiny_gl(void)
 {
-	gl.information = exec_information;
-	gl.Begin = exec_glBegin;
-	gl.Clear = exec_glClear;
-	gl.ClearColor = exec_glClearColor;
-	gl.Color3f = exec_glColor3f;
-	gl.Disable = exec_glDisable;
-	gl.Enable = exec_glEnable;
-	gl.End = exec_glEnd;
-	gl.Lightfv = exec_glLightfv;
-	gl.LoadIdentity = exec_glLoadIdentity;
-	gl.Materialfv = exec_glMaterialfv;
-	gl.MatrixMode = exec_glMatrixMode;
-	gl.Orthof = exec_glOrthof;
-	gl.PopMatrix = exec_glPopMatrix;
-	gl.PushMatrix = exec_glPushMatrix;
-	gl.Rotatef = exec_glRotatef;
-	gl.TexEnvi = exec_glTexEnvi;
-	gl.TexParameteri = exec_glTexParameteri;
-	gl.Translatef = exec_glTranslatef;
-	gl.Vertex2f = exec_glVertex2f;
-	gl.Vertex3f = exec_glVertex3f;
-	gl.OSMesaCreateLDG = exec_OSMesaCreateLDG;
-	gl.OSMesaDestroyLDG = exec_OSMesaDestroyLDG;
-	gl.ArrayElement = exec_glArrayElement;
-	gl.BindTexture = exec_glBindTexture;
-	gl.CallList = exec_glCallList;
-	gl.ClearDepthf = exec_glClearDepthf;
-	gl.Color4f = exec_glColor4f;
-	gl.Color3fv = exec_glColor3fv;
-	gl.Color4fv = exec_glColor4fv;
-	gl.ColorMaterial = exec_glColorMaterial;
-	gl.ColorPointer = exec_glColorPointer;
-	gl.CullFace = exec_glCullFace;
-	gl.DeleteTextures = exec_glDeleteTextures;
-	gl.DisableClientState = exec_glDisableClientState;
-	gl.EnableClientState = exec_glEnableClientState;
-	gl.EndList = exec_glEndList;
-	gl.EdgeFlag = exec_glEdgeFlag;
-	gl.Flush = exec_glFlush;
-	gl.FrontFace = exec_glFrontFace;
-	gl.Frustumf = exec_glFrustumf;
-	gl.GenLists = exec_glGenLists;
-	gl.GenTextures = exec_glGenTextures;
-	gl.GetFloatv = exec_glGetFloatv;
-	gl.GetIntegerv = exec_glGetIntegerv;
-	gl.Hint = exec_glHint;
-	gl.InitNames = exec_glInitNames;
-	gl.IsList = exec_glIsList;
-	gl.Lightf = exec_glLightf;
-	gl.LightModeli = exec_glLightModeli;
-	gl.LightModelfv = exec_glLightModelfv;
-	gl.LoadMatrixf = exec_glLoadMatrixf;
-	gl.LoadName = exec_glLoadName;
-	gl.Materialf = exec_glMaterialf;
-	gl.MultMatrixf = exec_glMultMatrixf;
-	gl.NewList = exec_glNewList;
-	gl.Normal3f = exec_glNormal3f;
-	gl.Normal3fv = exec_glNormal3fv;
-	gl.NormalPointer = exec_glNormalPointer;
-	gl.PixelStorei = exec_glPixelStorei;
-	gl.PolygonMode = exec_glPolygonMode;
-	gl.PolygonOffset = exec_glPolygonOffset;
-	gl.PopName = exec_glPopName;
-	gl.PushName = exec_glPushName;
-	gl.RenderMode = exec_glRenderMode;
-	gl.SelectBuffer = exec_glSelectBuffer;
-	gl.Scalef = exec_glScalef;
-	gl.ShadeModel = exec_glShadeModel;
-	gl.TexCoord2f = exec_glTexCoord2f;
-	gl.TexCoord4f = exec_glTexCoord4f;
-	gl.TexCoord2fv = exec_glTexCoord2fv;
-	gl.TexCoordPointer = exec_glTexCoordPointer;
-	gl.TexImage2D = exec_glTexImage2D;
-	gl.Vertex4f = exec_glVertex4f;
-	gl.Vertex3fv = exec_glVertex3fv;
-	gl.VertexPointer = exec_glVertexPointer;
-	gl.Viewport = exec_glViewport;
-	gl.swapbuffer = exec_swapbuffer;
-	gl.max_width = exec_max_width;
-	gl.max_height = exec_max_height;
-	gl.DeleteLists = exec_glDeleteLists;
-	gl.gluLookAtf = exec_gluLookAtf;
-	gl.exception_error = exec_exception_error;
+	struct _gl_tiny *glp = &gl;
+	glp->information = exec_information;
+	glp->Begin = exec_glBegin;
+	glp->Clear = exec_glClear;
+	glp->ClearColor = exec_glClearColor;
+	glp->Color3f = exec_glColor3f;
+	glp->Disable = exec_glDisable;
+	glp->Enable = exec_glEnable;
+	glp->End = exec_glEnd;
+	glp->Lightfv = exec_glLightfv;
+	glp->LoadIdentity = exec_glLoadIdentity;
+	glp->Materialfv = exec_glMaterialfv;
+	glp->MatrixMode = exec_glMatrixMode;
+	glp->Orthof = exec_glOrthof;
+	glp->PopMatrix = exec_glPopMatrix;
+	glp->PushMatrix = exec_glPushMatrix;
+	glp->Rotatef = exec_glRotatef;
+	glp->TexEnvi = exec_glTexEnvi;
+	glp->TexParameteri = exec_glTexParameteri;
+	glp->Translatef = exec_glTranslatef;
+	glp->Vertex2f = exec_glVertex2f;
+	glp->Vertex3f = exec_glVertex3f;
+	glp->OSMesaCreateLDG = exec_OSMesaCreateLDG;
+	glp->OSMesaDestroyLDG = exec_OSMesaDestroyLDG;
+	glp->ArrayElement = exec_glArrayElement;
+	glp->BindTexture = exec_glBindTexture;
+	glp->CallList = exec_glCallList;
+	glp->ClearDepthf = exec_glClearDepthf;
+	glp->Color4f = exec_glColor4f;
+	glp->Color3fv = exec_glColor3fv;
+	glp->Color4fv = exec_glColor4fv;
+	glp->ColorMaterial = exec_glColorMaterial;
+	glp->ColorPointer = exec_glColorPointer;
+	glp->CullFace = exec_glCullFace;
+	glp->DeleteTextures = exec_glDeleteTextures;
+	glp->DisableClientState = exec_glDisableClientState;
+	glp->EnableClientState = exec_glEnableClientState;
+	glp->EndList = exec_glEndList;
+	glp->EdgeFlag = exec_glEdgeFlag;
+	glp->Flush = exec_glFlush;
+	glp->FrontFace = exec_glFrontFace;
+	glp->Frustumf = exec_glFrustumf;
+	glp->GenLists = exec_glGenLists;
+	glp->GenTextures = exec_glGenTextures;
+	glp->GetFloatv = exec_glGetFloatv;
+	glp->GetIntegerv = exec_glGetIntegerv;
+	glp->Hint = exec_glHint;
+	glp->InitNames = exec_glInitNames;
+	glp->IsList = exec_glIsList;
+	glp->Lightf = exec_glLightf;
+	glp->LightModeli = exec_glLightModeli;
+	glp->LightModelfv = exec_glLightModelfv;
+	glp->LoadMatrixf = exec_glLoadMatrixf;
+	glp->LoadName = exec_glLoadName;
+	glp->Materialf = exec_glMaterialf;
+	glp->MultMatrixf = exec_glMultMatrixf;
+	glp->NewList = exec_glNewList;
+	glp->Normal3f = exec_glNormal3f;
+	glp->Normal3fv = exec_glNormal3fv;
+	glp->NormalPointer = exec_glNormalPointer;
+	glp->PixelStorei = exec_glPixelStorei;
+	glp->PolygonMode = exec_glPolygonMode;
+	glp->PolygonOffset = exec_glPolygonOffset;
+	glp->PopName = exec_glPopName;
+	glp->PushName = exec_glPushName;
+	glp->RenderMode = exec_glRenderMode;
+	glp->SelectBuffer = exec_glSelectBuffer;
+	glp->Scalef = exec_glScalef;
+	glp->ShadeModel = exec_glShadeModel;
+	glp->TexCoord2f = exec_glTexCoord2f;
+	glp->TexCoord4f = exec_glTexCoord4f;
+	glp->TexCoord2fv = exec_glTexCoord2fv;
+	glp->TexCoordPointer = exec_glTexCoordPointer;
+	glp->TexImage2D = exec_glTexImage2D;
+	glp->Vertex4f = exec_glVertex4f;
+	glp->Vertex3fv = exec_glVertex3fv;
+	glp->VertexPointer = exec_glVertexPointer;
+	glp->Viewport = exec_glViewport;
+	glp->swapbuffer = exec_swapbuffer;
+	glp->max_width = exec_max_width;
+	glp->max_height = exec_max_height;
+	glp->DeleteLists = exec_glDeleteLists;
+	glp->gluLookAtf = exec_gluLookAtf;
+	glp->exception_error = exec_exception_error;
 }
 
 
-long slb_load_tiny_gl(const char *libname, const char *path, long min_version)
+struct gl_public *slb_load_tiny_gl(const char *path)
 {
 	long ret;
+	size_t len;
+	struct gl_public *pub = NULL;
 	
-	if (libname == NULL)
-		libname = "tiny_gl.slb";
-	ret = Slbopen(libname, path, min_version, &gl_slb, &gl_exec);
+	/*
+	 * Slbopen() checks the name of the file with the
+	 * compiled-in library name, so there is no way
+	 * to pass an alternative filename here
+	 */
+	ret = Slbopen("tiny_gl.slb", path, 4 /* ARANFOSMESA_NFAPI_VERSION */, &gl_slb, &gl_exec);
 	if (ret >= 0)
 	{
-		slb_init_tiny_gl();
+		long  __CDECL (*exec)(SLB_HANDLE, long, long, void *) = (long  __CDECL (*)(SLB_HANDLE, long, long, void *))gl_exec;
+		
+		len = (*exec)(gl_slb, 0, SLB_NARGS(1), NULL);
+		pub = gl_pub = (struct gl_public *)calloc(1, len);
+		if (pub)
+		{
+			pub->m_alloc = malloc;
+			pub->m_free = free;
+			pub->libhandle = gl_slb;
+			pub->libexec = gl_exec;
+			(*exec)(gl_slb, 0, SLB_NARGS(1), pub);
+			slb_init_tiny_gl();
+		}
 	}
-	return ret;
+	return pub;
 }
 
 
-void slb_unload_tiny_gl(void)
+void slb_unload_tiny_gl(struct gl_public *pub)
 {
-	if (gl_slb != NULL)
+	if (pub != NULL)
 	{
-		Slbclose(gl_slb);
-		gl_slb = 0;
+		if (pub->libhandle != NULL)
+		{
+			Slbclose(pub->libhandle);
+			gl_slb = 0;
+		}
+		pub->m_free(pub);
 	}
 }

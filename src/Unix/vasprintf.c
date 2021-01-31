@@ -18,6 +18,7 @@ License along with libiberty; see the file COPYING.LIB.  If
 not, write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+#include "config.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -32,11 +33,10 @@ Boston, MA 02111-1307, USA.  */
 int global_total_width;
 #endif
 
+#ifndef HAVE_VASPRINTF
+
 static int
-int_vasprintf (result, format, args)
-     char **result;
-     const char *format;
-     va_list *args;
+int_vasprintf (char **result, const char *format, va_list *args)
 {
   const char *p = format;
   /* Add one to make sure that it is never zero, which might cause malloc
@@ -116,17 +116,14 @@ int_vasprintf (result, format, args)
 }
 
 int
-vasprintf (result, format, args)
-     char **result;
-     const char *format;
-#if defined (_BSD_VA_LIST_) && defined (__FreeBSD__)
-     _BSD_VA_LIST_ args;
-#else
-     va_list args;
-#endif
+vasprintf (char **result, const char *format, va_list args)
 {
   return int_vasprintf (result, format, &args);
 }
+
+#else
+extern int _I_dont_care_that_ISO_C_forbids_an_empty_source_file_;
+#endif
 
 #ifdef TEST
 void
@@ -140,7 +137,8 @@ checkit
 {
   va_list args;
   char *result;
-
+  int ret;
+  
 #ifdef __STDC__
   va_start (args, format);
 #else
@@ -148,8 +146,8 @@ checkit
   va_start (args);
   format = va_arg (args, char *);
 #endif
-  vasprintf (&result, format, args);
-  if (strlen (result) < global_total_width)
+  ret = vasprintf (&result, format, args);
+  if (ret >= 0 && strlen (result) < global_total_width)
     printf ("PASS: ");
   else
     printf ("FAIL: ");

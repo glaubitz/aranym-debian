@@ -28,6 +28,7 @@
 
 #include "nf_base.h"
 #include "tools.h"
+#include "win32_supp.h"
 
 #include <map>
 
@@ -71,6 +72,7 @@ class HostFs : public NF_Base
 		uint32	  childCount;
 		bool      created;      // only xfs_creat() was issued (no dev_open yet)
 
+		memptr locks;
 		char	  *name;
 	};
 
@@ -124,13 +126,6 @@ class HostFs : public NF_Base
 	void reset();
 
 	/**
-	 * Installs the drive.
-	 **/
-	void install( const char driveSign, const char* rootPath, bool halfSensitive );
-
-	uint32 getDrvBits();
-
-	/**
 	 * MetaDos DOS driver dispatch functions.
 	 **/
 	const char *name() { return "HOSTFS"; }
@@ -156,8 +151,7 @@ class HostFs : public NF_Base
 	 * Note: This is the most sophisticated thing in this object.
 	 **/
 	void transformFileName( char* dest, const char* source );
-	bool getHostFileName( char* result, ExtDrive* drv, char* pathName, const char* name );
-	void convertPathA2F( ExtDrive *drv, char* fpathName, char* pathName, const char* basePath = NULL );
+	bool getHostFileName( char* result, ExtDrive* drv, const char* pathName, const char* name );
 
 	void fetchXFSC( XfsCookie *fc, memptr filep );
 	void flushXFSC( XfsCookie *fc, memptr filep );

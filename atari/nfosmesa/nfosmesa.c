@@ -33,20 +33,35 @@
 #include "lib-misc.h"
 #include "nfosmesa_nfapi.h"
 
+#define OSMESA_PROC(type, gl, name, export, upper, proto, args, first, ret) extern type APIENTRY OSMesa ## name proto ;
+#define GL_PROC(type, gl, name, export, upper, proto, args, first, ret) extern type APIENTRY gl ## name proto ;
+#include "glfuncs.h"
+
 #define WITH_PROTOTYPE_STRINGS 1
+
+gl_private *private;
 
 /*--- LDG functions ---*/
 
+static long GLAPIENTRY ldg_libinit(gl_private *priv)
+{
+	private = priv;
+	internal_glInit(private);
+	return sizeof(*private);
+}
+
 static PROC const LibFunc[]={ 
 #if WITH_PROTOTYPE_STRINGS
-#define GL_PROC(type, gl, name, export, upper, params, first, ret) { #gl #export, #type " " #gl #name #params, gl ## name },
-#define OSMESA_PROC(type, gl, name, export, upper, params, first, ret) { "OSMesa" #export, #type " OSMesa" #name #params, OSMesa ## name },
+	{ "glInit", "glInit(void *)", ldg_libinit },
+#define GL_PROC(type, gl, name, export, upper, proto, args, first, ret) { #export, #type " " #gl #name #proto, gl ## name },
+#define OSMESA_PROC(type, gl, name, export, upper, proto, args, first, ret) { #export, #type " OSMesa" #name #proto, OSMesa ## name },
 #else
-#define GL_PROC(type, gl, name, export, upper, params, first, ret) { #gl #export, 0, gl ## name },
-#define OSMESA_PROC(type, gl, name, export, upper, params, first, ret) { "OSMesa" #export, 0, OSMesa ## name },
+	{ "glInit", 0, ldg_libinit },
+#define GL_PROC(type, gl, name, export, upper, proto, args, first, ret) { #export, 0, gl ## name },
+#define OSMESA_PROC(type, gl, name, export, upper, proto, args, first, ret) { #export, 0, OSMesa ## name },
 #endif
-	#include "glfuncs.h"		/* 12 OSMesa + 2664 GL functions */
-	#include "link-oldmesa.h"	/* 5 + 8 functions */
+	#include "glfuncs.h"		/* 12 OSMesa + numerous GL functions + 1 GLU function */
+	#include "link-oldmesa.h"	/* 5 + 8 functions for compatibility with TinyGL */
 	{NULL, NULL, NULL}
 };
 
@@ -58,6 +73,11 @@ int err_old_nfapi(void)
 	return 1;
 }
 
+
+#ifndef __STRINGIFY
+#define __STRING(x)	#x
+#define __STRINGIFY(x)	__STRING(x)
+#endif
 
 char const __Ident_osmesa[] = "$OSMesa: NFOSMesa API Version " __STRINGIFY(ARANFOSMESA_NFAPI_VERSION) " " ASCII_ARCH_TARGET " " ASCII_COMPILER " $";
 

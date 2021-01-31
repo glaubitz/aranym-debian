@@ -41,7 +41,7 @@
 #include "sysdeps.h"
 #include "hardware.h"
 #include "cpu_emulation.h"
-#include "memory.h"
+#include "memory-uae.h"
 #include "blitter.h"
 #include "icio.h"
 
@@ -112,7 +112,7 @@ void BLITTER::SM_UW(memptr addr, UW value) {
 
 
 #define HOP_OPS(_fn_name,_op,_do_source_shift,_get_source_data,_shifted_hopd_data, _do_halftone_inc) \
-void _fn_name ( BLITTER& b ) \
+static void _fn_name ( BLITTER& b ) \
 {												\
 	register unsigned int skew       = (unsigned int) b.skewreg & 15;		\
 	register unsigned int source_buffer=0;				\
@@ -167,147 +167,164 @@ void _fn_name ( BLITTER& b ) \
 };
 
 
-HOP_OPS(_HOP_0_OP_00_N,(0), source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_01_N,(opd_data & dst_data) ,source_buffer >>=16,; , 0xffff, ;)
-HOP_OPS(_HOP_0_OP_02_N,(opd_data & ~dst_data) ,source_buffer >>=16,; , 0xffff,;)	 
-HOP_OPS(_HOP_0_OP_03_N,(opd_data) ,source_buffer >>=16,; , 0xffff,;)
-HOP_OPS(_HOP_0_OP_04_N,(~opd_data & dst_data) ,source_buffer >>=16,;, 0xffff,;)
-HOP_OPS(_HOP_0_OP_05_N,(dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_06_N,(opd_data ^ dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_07_N,(opd_data | dst_data) ,source_buffer >>=16,; , 0xffff, ;)
-HOP_OPS(_HOP_0_OP_08_N,(~opd_data & ~dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_09_N,(~opd_data ^ dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_10_N,(~dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_11_N,(opd_data | ~dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_12_N,(~opd_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_13_N,(~opd_data | dst_data) ,source_buffer >>=16,;, 0xffff, ;)	 
-HOP_OPS(_HOP_0_OP_14_N,(~opd_data | ~dst_data) ,source_buffer >>=16,;, 0xffff, ;)
-HOP_OPS(_HOP_0_OP_15_N,(0xffff) ,source_buffer >>=16,;, 0xffff, ;)
+/*
+ * Some macros fixed:
+ * operations, that don't need a source, may not access the source address;
+ * the source address isn't even set up by the BIOS.
+ * This includes all HOP_0 operations (source is all ones),
+ * all HOP_1 operations (source is halftone only),
+ * and operations 0, 5, 10 and 15
+ */
+#define _HOP_0 0xffff
+#define _HOP_1 b.halftone_ram[b.halftone_curroffset]
+#define _HOP_2 (source_buffer >> skew)
+#define _HOP_3 (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset]
 
-HOP_OPS(_HOP_1_OP_00_N,(0) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_01_N,(opd_data & dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_02_N,(opd_data & ~dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_03_N,(opd_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_04_N,(~opd_data & dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_05_N,(dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_06_N,(opd_data ^ dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_07_N,(opd_data | dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_08_N,(~opd_data & ~dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_09_N,(~opd_data ^ dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_10_N,(~dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_11_N,(opd_data | ~dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_12_N,(~opd_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_13_N,(~opd_data | dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_14_N,(~opd_data | ~dst_data) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_15_N,(0xffff) ,source_buffer >>=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
+#define _HOP_INC b.halftone_curroffset = (b.halftone_curroffset + b.halftone_direction) & 15
 
-HOP_OPS(_HOP_2_OP_00_N,(0) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_01_N,(opd_data & dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_02_N,(opd_data & ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_03_N,(opd_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_04_N,(~opd_data & dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_05_N,(dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_06_N,(opd_data ^ dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_07_N,(opd_data | dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_08_N,(~opd_data & ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_09_N,(~opd_data ^ dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_10_N,(~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_11_N,(opd_data | ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_12_N,(~opd_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_13_N,(~opd_data | dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_14_N,(~opd_data | ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_15_N,(0xffff) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew),;)
+#define _SRC_READ_N source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16)
+#define _SRC_READ_P source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)))
 
-HOP_OPS(_HOP_3_OP_00_N,(0) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_01_N,(opd_data & dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_02_N,(opd_data & ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_03_N,(opd_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_04_N,(~opd_data & dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_05_N,(dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_06_N,(opd_data ^ dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_07_N,(opd_data | dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_08_N,(~opd_data & ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_09_N,(~opd_data ^ dst_data) , source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_10_N,(~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_11_N,(opd_data | ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_12_N,(~opd_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_13_N,(~opd_data | dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
-HOP_OPS(_HOP_3_OP_14_N,(~opd_data | ~dst_data) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15) 
-HOP_OPS(_HOP_3_OP_15_N,(0xffff) ,source_buffer >>=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) << 16) ,(source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15)
+HOP_OPS(_HOP_0_OP_00_N,(0),                     source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_01_N,(opd_data & dst_data),   source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_02_N,(opd_data & ~dst_data),  source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_03_N,(opd_data),              source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_04_N,(~opd_data & dst_data),  source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_05_N,(dst_data),              source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_06_N,(opd_data ^ dst_data),   source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_07_N,(opd_data | dst_data),   source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_08_N,(~opd_data & ~dst_data), source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_09_N,(~opd_data ^ dst_data),  source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_10_N,(~dst_data),             source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_11_N,(opd_data | ~dst_data),  source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_12_N,(~opd_data),             source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_13_N,(~opd_data | dst_data),  source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_14_N,(~opd_data | ~dst_data), source_buffer >>=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_15_N,(0xffff),                source_buffer >>=16, ;, _HOP_0, ;)
 
+HOP_OPS(_HOP_1_OP_00_N,(0),                     source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_01_N,(opd_data & dst_data),   source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_02_N,(opd_data & ~dst_data),  source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_03_N,(opd_data),              source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_04_N,(~opd_data & dst_data),  source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_05_N,(dst_data),              source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_06_N,(opd_data ^ dst_data),   source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_07_N,(opd_data | dst_data),   source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_08_N,(~opd_data & ~dst_data), source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_09_N,(~opd_data ^ dst_data),  source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_10_N,(~dst_data),             source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_11_N,(opd_data | ~dst_data),  source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_12_N,(~opd_data),             source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_13_N,(~opd_data | dst_data),  source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_14_N,(~opd_data | ~dst_data), source_buffer >>=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_15_N,(0xffff),                source_buffer >>=16, ;, _HOP_1, _HOP_INC)
 
-HOP_OPS(_HOP_0_OP_00_P,(0) ,source_buffer <<=16,;, 0xffff,;)
-HOP_OPS(_HOP_0_OP_01_P,(opd_data & dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_02_P,(opd_data & ~dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_03_P,(opd_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_04_P,(~opd_data & dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_05_P,(dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_06_P,(opd_data ^ dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_07_P,(opd_data | dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_08_P,(~opd_data & ~dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_09_P,(~opd_data ^ dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_10_P,(~dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_11_P,(opd_data | ~dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_12_P,(~opd_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_13_P,(~opd_data | dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_14_P,(~opd_data | ~dst_data) ,source_buffer <<=16,;, 0xffff,;)	
-HOP_OPS(_HOP_0_OP_15_P,(0xffff) ,source_buffer <<=16,;, 0xffff,;)	
+HOP_OPS(_HOP_2_OP_00_N,(0),                     source_buffer >>=16, ;,           _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_01_N,(opd_data & dst_data),   source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_02_N,(opd_data & ~dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_03_N,(opd_data),              source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_04_N,(~opd_data & dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_05_N,(dst_data),              source_buffer >>=16, ;,           _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_06_N,(opd_data ^ dst_data),   source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_07_N,(opd_data | dst_data),   source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_08_N,(~opd_data & ~dst_data), source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_09_N,(~opd_data ^ dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_10_N,(~dst_data),             source_buffer >>=16, ;,           _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_11_N,(opd_data | ~dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_12_N,(~opd_data),             source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_13_N,(~opd_data | dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_14_N,(~opd_data | ~dst_data), source_buffer >>=16, _SRC_READ_N, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_15_N,(0xffff),                source_buffer >>=16, ;,           _HOP_2, ;)
 
-HOP_OPS(_HOP_1_OP_00_P,(0) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_01_P,(opd_data & dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_02_P,(opd_data & ~dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_03_P,(opd_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_04_P,(~opd_data & dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_05_P,(dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_06_P,(opd_data ^ dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_07_P,(opd_data | dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_08_P,(~opd_data & ~dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )\
-HOP_OPS(_HOP_1_OP_09_P,(~opd_data ^ dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_10_P,(~dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_11_P,(opd_data | ~dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_12_P,(~opd_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_13_P,(~opd_data | dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_14_P,(~opd_data | ~dst_data) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-HOP_OPS(_HOP_1_OP_15_P,(0xffff) ,source_buffer <<=16,;,b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 )
-
-HOP_OPS(_HOP_2_OP_00_P,(0) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_01_P,(opd_data & dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_02_P,(opd_data & ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_03_P,(opd_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_04_P,(~opd_data & dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_05_P,(dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_06_P,(opd_data ^ dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_07_P,(opd_data | dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_08_P,(~opd_data & ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_09_P,(~opd_data ^ dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_10_P,(~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_11_P,(opd_data | ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-
-HOP_OPS(_HOP_2_OP_12_P,(~opd_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_13_P,(~opd_data | dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_14_P,(~opd_data | ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-HOP_OPS(_HOP_2_OP_15_P,(0xffff) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ) , (source_buffer >> skew),;)
-
-HOP_OPS(_HOP_3_OP_00_P,(0) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_01_P,(opd_data & dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_02_P,(opd_data & ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_03_P,(opd_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_04_P,(~opd_data & dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_05_P,(dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_06_P,(opd_data ^ dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_07_P,(opd_data | dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_08_P,(~opd_data & ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_09_P,(~opd_data ^ dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_10_P,(~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_11_P,(opd_data | ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_12_P,(~opd_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_13_P,(~opd_data | dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_14_P,(~opd_data | ~dst_data) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
-HOP_OPS(_HOP_3_OP_15_P,(0xffff) ,source_buffer <<=16,source_buffer |= ((unsigned int) b.LM_UW(ADDR(b.source_addr)) ), (source_buffer >> skew) & b.halftone_ram[b.halftone_curroffset],b.halftone_curroffset=(b.halftone_curroffset+b.halftone_direction) & 15 ) 
+HOP_OPS(_HOP_3_OP_00_N,(0),                     source_buffer >>=16, ;,           _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_01_N,(opd_data & dst_data),   source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_02_N,(opd_data & ~dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_03_N,(opd_data),              source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_04_N,(~opd_data & dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_05_N,(dst_data),              source_buffer >>=16, ;,           _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_06_N,(opd_data ^ dst_data),   source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_07_N,(opd_data | dst_data),   source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_08_N,(~opd_data & ~dst_data), source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_09_N,(~opd_data ^ dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_10_N,(~dst_data),             source_buffer >>=16, ;,           _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_11_N,(opd_data | ~dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_12_N,(~opd_data),             source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_13_N,(~opd_data | dst_data),  source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_14_N,(~opd_data | ~dst_data), source_buffer >>=16, _SRC_READ_N, _HOP_3, _HOP_INC) 
+HOP_OPS(_HOP_3_OP_15_N,(0xffff),                source_buffer >>=16, ;,           _HOP_3, _HOP_INC)
 
 
+HOP_OPS(_HOP_0_OP_00_P,(0),                     source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_01_P,(opd_data & dst_data),   source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_02_P,(opd_data & ~dst_data),  source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_03_P,(opd_data),              source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_04_P,(~opd_data & dst_data),  source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_05_P,(dst_data),              source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_06_P,(opd_data ^ dst_data),   source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_07_P,(opd_data | dst_data),   source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_08_P,(~opd_data & ~dst_data), source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_09_P,(~opd_data ^ dst_data),  source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_10_P,(~dst_data),             source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_11_P,(opd_data | ~dst_data),  source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_12_P,(~opd_data),             source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_13_P,(~opd_data | dst_data),  source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_14_P,(~opd_data | ~dst_data), source_buffer <<=16, ;, _HOP_0, ;)
+HOP_OPS(_HOP_0_OP_15_P,(0xffff),                source_buffer <<=16, ;, _HOP_0, ;)
 
-void hop2op3p( BLITTER& b )
+HOP_OPS(_HOP_1_OP_00_P,(0),                     source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_01_P,(opd_data & dst_data),   source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_02_P,(opd_data & ~dst_data),  source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_03_P,(opd_data),              source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_04_P,(~opd_data & dst_data),  source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_05_P,(dst_data),              source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_06_P,(opd_data ^ dst_data),   source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_07_P,(opd_data | dst_data),   source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_08_P,(~opd_data & ~dst_data), source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_09_P,(~opd_data ^ dst_data),  source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_10_P,(~dst_data),             source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_11_P,(opd_data | ~dst_data),  source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_12_P,(~opd_data),             source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_13_P,(~opd_data | dst_data),  source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_14_P,(~opd_data | ~dst_data), source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+HOP_OPS(_HOP_1_OP_15_P,(0xffff),                source_buffer <<=16, ;, _HOP_1, _HOP_INC)
+
+HOP_OPS(_HOP_2_OP_00_P,(0),                     source_buffer <<=16, ;,           _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_01_P,(opd_data & dst_data),   source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_02_P,(opd_data & ~dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_03_P,(opd_data),              source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_04_P,(~opd_data & dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_05_P,(dst_data),              source_buffer <<=16, ;,           _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_06_P,(opd_data ^ dst_data),   source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_07_P,(opd_data | dst_data),   source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_08_P,(~opd_data & ~dst_data), source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_09_P,(~opd_data ^ dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_10_P,(~dst_data),             source_buffer <<=16, ;,           _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_11_P,(opd_data | ~dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_12_P,(~opd_data),             source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_13_P,(~opd_data | dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_14_P,(~opd_data | ~dst_data), source_buffer <<=16, _SRC_READ_P, _HOP_2, ;)
+HOP_OPS(_HOP_2_OP_15_P,(0xffff),                source_buffer <<=16, ;,           _HOP_2, ;)
+
+HOP_OPS(_HOP_3_OP_00_P,(0),                     source_buffer <<=16, ;,           _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_01_P,(opd_data & dst_data),   source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_02_P,(opd_data & ~dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_03_P,(opd_data),              source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_04_P,(~opd_data & dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_05_P,(dst_data),              source_buffer <<=16, ;,           _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_06_P,(opd_data ^ dst_data),   source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_07_P,(opd_data | dst_data),   source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_08_P,(~opd_data & ~dst_data), source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_09_P,(~opd_data ^ dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_10_P,(~dst_data),             source_buffer <<=16, ;,           _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_11_P,(opd_data | ~dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_12_P,(~opd_data),             source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_13_P,(~opd_data | dst_data),  source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_14_P,(~opd_data | ~dst_data), source_buffer <<=16, _SRC_READ_P, _HOP_3, _HOP_INC)
+HOP_OPS(_HOP_3_OP_15_P,(0xffff),                source_buffer <<=16, ;,           _HOP_3, _HOP_INC)
+
+
+
+void _hop_2_op_03_p( BLITTER& b )
 {
 #ifdef BLITTER_MEMMOVE
 	if (getVIDEL ()->getBpp() == 16) {
@@ -343,7 +360,7 @@ void hop2op3p( BLITTER& b )
 	_HOP_2_OP_03_P( b );
 }
 
-void hop2op3n( BLITTER& b )
+void _hop_2_op_03_n( BLITTER& b )
 {
 #ifdef BLITTER_MEMMOVE
 	if (getVIDEL ()->getBpp() == 16) {
@@ -383,24 +400,25 @@ void hop2op3n( BLITTER& b )
 
 
 
-static void (*do_hop_op_N[4][16])( BLITTER& ) =
-{{ 	_HOP_0_OP_00_N, _HOP_0_OP_01_N, _HOP_0_OP_02_N, _HOP_0_OP_03_N, _HOP_0_OP_04_N, _HOP_0_OP_05_N, _HOP_0_OP_06_N, _HOP_0_OP_07_N, _HOP_0_OP_08_N, _HOP_0_OP_09_N, _HOP_0_OP_10_N, _HOP_0_OP_11_N, _HOP_0_OP_12_N, _HOP_0_OP_13_N, _HOP_0_OP_14_N, _HOP_0_OP_15_N,},{
-	_HOP_1_OP_00_N, _HOP_1_OP_01_N, _HOP_1_OP_02_N, _HOP_1_OP_03_N, _HOP_1_OP_04_N, _HOP_1_OP_05_N, _HOP_1_OP_06_N, _HOP_1_OP_07_N, _HOP_1_OP_08_N, _HOP_1_OP_09_N, _HOP_1_OP_10_N, _HOP_1_OP_11_N, _HOP_1_OP_12_N, _HOP_1_OP_13_N, _HOP_1_OP_14_N, _HOP_1_OP_15_N,},{
-	_HOP_2_OP_00_N, _HOP_2_OP_01_N, _HOP_2_OP_02_N, hop2op3n /*_HOP_2_OP_03_N*/, _HOP_2_OP_04_N, _HOP_2_OP_05_N, _HOP_2_OP_06_N, _HOP_2_OP_07_N, _HOP_2_OP_08_N, _HOP_2_OP_09_N, _HOP_2_OP_10_N, _HOP_2_OP_11_N, _HOP_2_OP_12_N, _HOP_2_OP_13_N, _HOP_2_OP_14_N, _HOP_2_OP_15_N,},{
-	_HOP_3_OP_00_N, _HOP_3_OP_01_N, _HOP_3_OP_02_N, _HOP_3_OP_03_N, _HOP_3_OP_04_N, _HOP_3_OP_05_N, _HOP_3_OP_06_N, _HOP_3_OP_07_N, _HOP_3_OP_08_N, _HOP_3_OP_09_N, _HOP_3_OP_10_N, _HOP_3_OP_11_N, _HOP_3_OP_12_N, _HOP_3_OP_13_N, _HOP_3_OP_14_N, _HOP_3_OP_15_N,}
+static void (*const do_hop_op_N[4][16])( BLITTER& ) = {
+	{ _HOP_0_OP_00_N, _HOP_0_OP_01_N, _HOP_0_OP_02_N, _HOP_0_OP_03_N, _HOP_0_OP_04_N, _HOP_0_OP_05_N, _HOP_0_OP_06_N, _HOP_0_OP_07_N, _HOP_0_OP_08_N, _HOP_0_OP_09_N, _HOP_0_OP_10_N, _HOP_0_OP_11_N, _HOP_0_OP_12_N, _HOP_0_OP_13_N, _HOP_0_OP_14_N, _HOP_0_OP_15_N },
+	{ _HOP_1_OP_00_N, _HOP_1_OP_01_N, _HOP_1_OP_02_N, _HOP_1_OP_03_N, _HOP_1_OP_04_N, _HOP_1_OP_05_N, _HOP_1_OP_06_N, _HOP_1_OP_07_N, _HOP_1_OP_08_N, _HOP_1_OP_09_N, _HOP_1_OP_10_N, _HOP_1_OP_11_N, _HOP_1_OP_12_N, _HOP_1_OP_13_N, _HOP_1_OP_14_N, _HOP_1_OP_15_N },
+	{ _HOP_2_OP_00_N, _HOP_2_OP_01_N, _HOP_2_OP_02_N, _hop_2_op_03_n, _HOP_2_OP_04_N, _HOP_2_OP_05_N, _HOP_2_OP_06_N, _HOP_2_OP_07_N, _HOP_2_OP_08_N, _HOP_2_OP_09_N, _HOP_2_OP_10_N, _HOP_2_OP_11_N, _HOP_2_OP_12_N, _HOP_2_OP_13_N, _HOP_2_OP_14_N, _HOP_2_OP_15_N },
+	{ _HOP_3_OP_00_N, _HOP_3_OP_01_N, _HOP_3_OP_02_N, _HOP_3_OP_03_N, _HOP_3_OP_04_N, _HOP_3_OP_05_N, _HOP_3_OP_06_N, _HOP_3_OP_07_N, _HOP_3_OP_08_N, _HOP_3_OP_09_N, _HOP_3_OP_10_N, _HOP_3_OP_11_N, _HOP_3_OP_12_N, _HOP_3_OP_13_N, _HOP_3_OP_14_N, _HOP_3_OP_15_N }
 };
 
-static void (*do_hop_op_P[4][16])( BLITTER& ) =
-{{ 	_HOP_0_OP_00_P, _HOP_0_OP_01_P, _HOP_0_OP_02_P, _HOP_0_OP_03_P, _HOP_0_OP_04_P, _HOP_0_OP_05_P, _HOP_0_OP_06_P, _HOP_0_OP_07_P, _HOP_0_OP_08_P, _HOP_0_OP_09_P, _HOP_0_OP_10_P, _HOP_0_OP_11_P, _HOP_0_OP_12_P, _HOP_0_OP_13_P, _HOP_0_OP_14_P, _HOP_0_OP_15_P,},{
-	_HOP_1_OP_00_P, _HOP_1_OP_01_P, _HOP_1_OP_02_P, _HOP_1_OP_03_P, _HOP_1_OP_04_P, _HOP_1_OP_05_P, _HOP_1_OP_06_P, _HOP_1_OP_07_P, _HOP_1_OP_08_P, _HOP_1_OP_09_P, _HOP_1_OP_10_P, _HOP_1_OP_11_P, _HOP_1_OP_12_P, _HOP_1_OP_13_P, _HOP_1_OP_14_P, _HOP_1_OP_15_P,},{
-		_HOP_2_OP_00_P, _HOP_2_OP_01_P, _HOP_2_OP_02_P, hop2op3p /*_HOP_2_OP_03_P*/, _HOP_2_OP_04_P, _HOP_2_OP_05_P, _HOP_2_OP_06_P, _HOP_2_OP_07_P, _HOP_2_OP_08_P, _HOP_2_OP_09_P, _HOP_2_OP_10_P, _HOP_2_OP_11_P, _HOP_2_OP_12_P, _HOP_2_OP_13_P, _HOP_2_OP_14_P, _HOP_2_OP_15_P,},{
-	_HOP_3_OP_00_P, _HOP_3_OP_01_P, _HOP_3_OP_02_P, _HOP_3_OP_03_P, _HOP_3_OP_04_P, _HOP_3_OP_05_P, _HOP_3_OP_06_P, _HOP_3_OP_07_P, _HOP_3_OP_08_P, _HOP_3_OP_09_P, _HOP_3_OP_10_P, _HOP_3_OP_11_P, _HOP_3_OP_12_P, _HOP_3_OP_13_P, _HOP_3_OP_14_P, _HOP_3_OP_15_P,},
+static void (*const do_hop_op_P[4][16])( BLITTER& ) = {
+	{ _HOP_0_OP_00_P, _HOP_0_OP_01_P, _HOP_0_OP_02_P, _HOP_0_OP_03_P, _HOP_0_OP_04_P, _HOP_0_OP_05_P, _HOP_0_OP_06_P, _HOP_0_OP_07_P, _HOP_0_OP_08_P, _HOP_0_OP_09_P, _HOP_0_OP_10_P, _HOP_0_OP_11_P, _HOP_0_OP_12_P, _HOP_0_OP_13_P, _HOP_0_OP_14_P, _HOP_0_OP_15_P },
+	{ _HOP_1_OP_00_P, _HOP_1_OP_01_P, _HOP_1_OP_02_P, _HOP_1_OP_03_P, _HOP_1_OP_04_P, _HOP_1_OP_05_P, _HOP_1_OP_06_P, _HOP_1_OP_07_P, _HOP_1_OP_08_P, _HOP_1_OP_09_P, _HOP_1_OP_10_P, _HOP_1_OP_11_P, _HOP_1_OP_12_P, _HOP_1_OP_13_P, _HOP_1_OP_14_P, _HOP_1_OP_15_P },
+	{ _HOP_2_OP_00_P, _HOP_2_OP_01_P, _HOP_2_OP_02_P, _hop_2_op_03_p, _HOP_2_OP_04_P, _HOP_2_OP_05_P, _HOP_2_OP_06_P, _HOP_2_OP_07_P, _HOP_2_OP_08_P, _HOP_2_OP_09_P, _HOP_2_OP_10_P, _HOP_2_OP_11_P, _HOP_2_OP_12_P, _HOP_2_OP_13_P, _HOP_2_OP_14_P, _HOP_2_OP_15_P },
+	{ _HOP_3_OP_00_P, _HOP_3_OP_01_P, _HOP_3_OP_02_P, _HOP_3_OP_03_P, _HOP_3_OP_04_P, _HOP_3_OP_05_P, _HOP_3_OP_06_P, _HOP_3_OP_07_P, _HOP_3_OP_08_P, _HOP_3_OP_09_P, _HOP_3_OP_10_P, _HOP_3_OP_11_P, _HOP_3_OP_12_P, _HOP_3_OP_13_P, _HOP_3_OP_14_P, _HOP_3_OP_15_P }
 };
 
 
 uint8 BLITTER::handleRead(memptr addr) {
 	addr -= getHWoffset();
 
+	D(bug("Blitter read byte from register %x at %06x", addr+getHWoffset(), showPC()));
 	switch(addr) {
 		case 0x3a: return hop;
 		case 0x3b: return op;
@@ -416,6 +434,7 @@ uint8 BLITTER::handleRead(memptr addr) {
 uae_u16 BLITTER::handleReadW(uaecptr addr) {
 	addr -= getHWoffset();
 
+	D(bug("Blitter read word from register %x at %06x", addr+getHWoffset(), showPC()));
 	if (addr < 0x20) {
 		return halftone_ram[addr / 2];
 	}
@@ -423,11 +442,15 @@ uae_u16 BLITTER::handleReadW(uaecptr addr) {
 	switch(addr) {
 		case 0x20: return source_x_inc;
 		case 0x22: return source_y_inc;
+		case 0x24: return (source_addr >> 16) & 0xffff;
+		case 0x26: return (source_addr) & 0xffff;
 		case 0x28: return end_mask_1;
 		case 0x2a: return end_mask_2;
 		case 0x2c: return end_mask_3;
 		case 0x2e: return dest_x_inc;
 		case 0x30: return dest_y_inc;
+		case 0x32: return (dest_addr >> 16) & 0xffff;
+		case 0x34: return (dest_addr) & 0xffff;
 		case 0x36: return x_count;
 		case 0x38: return y_count;
 		case 0x3a: // fallthrough
@@ -442,6 +465,7 @@ uae_u16 BLITTER::handleReadW(uaecptr addr) {
 uae_u32 BLITTER::handleReadL(uaecptr addr) {
 	addr -= getHWoffset();
 
+	D(bug("Blitter read long from register %x at %06x", addr+getHWoffset(), showPC()));
 	if (addr < 0x20) {
 		return BASE_IO::handleReadL(addr+getHWoffset());
 	}
@@ -459,13 +483,14 @@ uae_u32 BLITTER::handleReadL(uaecptr addr) {
 void BLITTER::handleWrite(memptr addr, uint8 value) {
 	addr -= getHWoffset();
 
+	D(bug("Blitter write byte $%02x to register %x at %06x", value, addr+getHWoffset(), showPC()));
 	switch(addr) {
 		case 0x3a: STORE_B_ff8a3a(value); break;
 		case 0x3b: STORE_B_ff8a3b(value); break;
 		case 0x3c: STORE_B_ff8a3c(value); break;
 		case 0x3d: STORE_B_ff8a3d(value); break;
 		default:
-			panicbug("Blitter tried to write byte %d to register %x at %06x", value, addr+getHWoffset(), showPC());
+			panicbug("Blitter tried to write byte $%02x to register %x at %06x", value, addr+getHWoffset(), showPC());
 	}
 
 	if (blit) {
@@ -477,6 +502,7 @@ void BLITTER::handleWrite(memptr addr, uint8 value) {
 void BLITTER::handleWriteW(uaecptr addr, uint16 value) {
 	addr -= getHWoffset();
 
+	D(bug("Blitter write word $%04x to register %x at %06x", value, addr+getHWoffset(), showPC()));
 	if (addr < 0x20) {
 		halftone_ram[addr / 2] = value;
 		return;
@@ -485,17 +511,21 @@ void BLITTER::handleWriteW(uaecptr addr, uint16 value) {
 	switch(addr) {
 		case 0x20: source_x_inc = value; break;
 		case 0x22: source_y_inc = value; break;
+		case 0x24: source_addr = (source_addr & 0x0000ffff) | (value << 16); source_addr_backup = source_addr; break;
+		case 0x26: source_addr = (source_addr & 0xffff0000) | (value & 0xfffe); source_addr_backup = source_addr; break;
 		case 0x28: end_mask_1 = value; break;
 		case 0x2a: end_mask_2 = value; break;
 		case 0x2c: end_mask_3 = value; break;
 		case 0x2e: dest_x_inc = value; break;
 		case 0x30: dest_y_inc = value; break;
+		case 0x32: dest_addr = (dest_addr & 0x0000ffff) | (value << 16); dest_addr_backup = dest_addr; break;
+		case 0x34: dest_addr = (dest_addr & 0xffff0000) | (value & 0xfffe); dest_addr_backup = dest_addr; break;
 		case 0x36: x_count = value; break;
 		case 0x38: y_count = value; break;
 		case 0x3a: STORE_B_ff8a3a(value >> 8); STORE_B_ff8a3b(value); break;
 		case 0x3c: STORE_B_ff8a3c(value >> 8); STORE_B_ff8a3d(value); break;
 		default:
-			panicbug("Blitter tried to write word %d to register %x at %06x", value, addr+getHWoffset(), showPC());
+			panicbug("Blitter tried to write word $%04x to register %x at %06x", value, addr+getHWoffset(), showPC());
 	}
 
 	if (blit) {
@@ -506,6 +536,7 @@ void BLITTER::handleWriteW(uaecptr addr, uint16 value) {
 
 void BLITTER::handleWriteL(uaecptr addr, uint32 value) {
 	addr -= getHWoffset();
+	D(bug("Blitter write long $%08x to register %x at %06x", value, addr+getHWoffset(), showPC()));
 	switch(addr) {
 		case 0x24:
 			D(bug("Blitter sets source to $%08lx at $%08lx", value, showPC()));
@@ -566,7 +597,16 @@ void BLITTER::Do_Blit(void)
 		dest_addr = dest_addr_backup;
 	}
 
-	if (source_addr <= 0x800 || (source_addr >= 0x0e80000 && source_addr < 0x1000000)) {
+	/*
+	 * do not check source address if is not used in operation
+	 */
+	if (hop != 0 && /* source is all ones */
+		hop != 1 && /* source is halftone only */
+		op != 0  && /* result is all zeroes */
+		op != 5  && /* result is destination */
+		op != 10 && /* result is ~destination */
+		op != 15 && /* result is all ones */
+		(source_addr <= 0x800 || (source_addr >= 0x0e80000 && source_addr < 0x1000000))) {
 		panicbug("Blitter Source address out of range: $%08x", source_addr);
 		return;
 	}
